@@ -1,0 +1,366 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>WhatsApp Restaurant Menu</title>
+    <style>
+      * {
+        margin: 0;
+        padding: 0;
+        box-sizing: border-box;
+      }
+
+      body {
+        font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto,
+          sans-serif;
+        background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+        min-height: 100vh;
+        display: flex;
+        justify-content: center;
+        align-items: center;
+        padding: 20px;
+      }
+
+      .phone-container {
+        width: 375px;
+        height: 650px;
+        background: #000;
+        border-radius: 40px;
+        padding: 8px;
+        box-shadow: 0 20px 40px rgba(0, 0, 0, 0.3);
+        position: relative;
+      }
+
+      .phone-screen {
+        width: 100%;
+        height: 100%;
+        background: #0a0a0a;
+        border-radius: 32px;
+        overflow: hidden;
+        position: relative;
+      }
+
+      .status-bar {
+        height: 44px;
+        background: #128c7e;
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        padding: 0 20px;
+        color: white;
+        font-size: 14px;
+        font-weight: 600;
+      }
+
+      .chat-header {
+        height: 60px;
+        background: #128c7e;
+        display: flex;
+        align-items: center;
+        padding: 0 16px;
+        color: white;
+        box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
+      }
+
+      .profile-pic {
+        width: 40px;
+        height: 40px;
+        border-radius: 50%;
+        background: #25d366;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        margin-right: 12px;
+        font-size: 18px;
+      }
+
+      .chat-info h3 {
+        font-size: 16px;
+        font-weight: 600;
+        margin-bottom: 2px;
+      }
+
+      .chat-info p {
+        font-size: 12px;
+        opacity: 0.8;
+      }
+
+      .chat-area {
+        height: 546px;
+        background: #0a0a0a;
+        overflow-y: auto;
+        padding: 16px;
+        position: relative;
+      }
+
+      .message {
+        margin-bottom: 16px;
+        display: flex;
+        animation: fadeInUp 0.5s ease-out;
+      }
+
+      .message.received {
+        justify-content: flex-start;
+      }
+
+      .message.sent {
+        justify-content: flex-end;
+      }
+
+      .message-content {
+        max-width: 280px;
+        padding: 12px 16px;
+        border-radius: 18px;
+        position: relative;
+        box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+      }
+
+      .message.received .message-content {
+        background: #1f1f1f;
+        color: white;
+        border-bottom-left-radius: 6px;
+      }
+
+      .message.sent .message-content {
+        background: #25d366;
+        color: white;
+        border-bottom-right-radius: 6px;
+      }
+
+      .message-time {
+        font-size: 11px;
+        opacity: 0.7;
+        margin-top: 4px;
+        text-align: right;
+      }
+
+      .menu-buttons {
+        display: grid;
+        grid-template-columns: 1fr 1fr;
+        gap: 8px;
+        margin-top: 12px;
+      }
+
+      .menu-button {
+        background: #25d366;
+        color: white;
+        border: none;
+        padding: 12px 16px;
+        border-radius: 20px;
+        font-size: 14px;
+        font-weight: 600;
+        cursor: pointer;
+        transition: all 0.3s ease;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        gap: 8px;
+      }
+
+      .menu-button:hover {
+        background: #1ea854;
+        transform: translateY(-2px);
+      }
+
+      .menu-button.full-width {
+        grid-column: 1 / -1;
+      }
+
+      .interactive-list {
+        background: #2a2a2a;
+        border-radius: 12px;
+        margin-top: 12px;
+        overflow: hidden;
+      }
+
+      .list-header {
+        background: #25d366;
+        color: white;
+        padding: 12px 16px;
+        font-weight: 600;
+        font-size: 14px;
+      }
+
+      .list-item {
+        background: #1f1f1f;
+        color: white;
+        padding: 16px;
+        border-bottom: 1px solid #333;
+        cursor: pointer;
+        transition: background 0.2s ease;
+        display: flex;
+        align-items: center;
+        gap: 12px;
+      }
+
+      .list-item:hover {
+        background: #333;
+      }
+
+      .list-item:last-child {
+        border-bottom: none;
+      }
+
+      .emoji {
+        font-size: 20px;
+      }
+
+      .welcome-message {
+        text-align: center;
+        font-size: 16px;
+        line-height: 1.5;
+      }
+
+      .brand-name {
+        font-size: 18px;
+        font-weight: 700;
+        color: #25d366;
+        margin-bottom: 8px;
+      }
+
+      @keyframes fadeInUp {
+        from {
+          opacity: 0;
+          transform: translateY(20px);
+        }
+        to {
+          opacity: 1;
+          transform: translateY(0);
+        }
+      }
+
+      .typing-indicator {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        color: #666;
+        font-size: 12px;
+        margin-top: 8px;
+      }
+
+      .typing-dots {
+        display: flex;
+        gap: 4px;
+      }
+
+      .typing-dots span {
+        width: 4px;
+        height: 4px;
+        border-radius: 50%;
+        background: #666;
+        animation: typing 1.4s infinite;
+      }
+
+      .typing-dots span:nth-child(2) {
+        animation-delay: 0.2s;
+      }
+
+      .typing-dots span:nth-child(3) {
+        animation-delay: 0.4s;
+      }
+
+      @keyframes typing {
+        0%,
+        60%,
+        100% {
+          transform: translateY(0);
+        }
+        30% {
+          transform: translateY(-10px);
+        }
+      }
+    </style>
+  </head>
+  <body>
+    <div class="phone-container">
+      <div class="phone-screen">
+        <div class="status-bar">
+          <span>9:41</span>
+          <span>●●●●● 4G</span>
+        </div>
+
+        <div class="chat-header">
+          <div class="profile-pic">🍕</div>
+          <div class="chat-info">
+            <h3>Mario's Pizza</h3>
+            <p>Online • Tap for menu</p>
+          </div>
+        </div>
+
+        <div class="chat-area">
+          <div class="message sent">
+            <div class="message-content">
+              Hi! I'd like to order some food
+              <div class="message-time">9:41 AM</div>
+            </div>
+          </div>
+
+          <div class="message received">
+            <div class="message-content">
+              <div class="welcome-message">
+                <div class="brand-name">🍕 Welcome to Mario's Pizza!</div>
+                <p>
+                  Hi there! 👋 Ready to order some delicious food? Let me show
+                  you our menu!
+                </p>
+              </div>
+
+              <div class="menu-buttons">
+                <button class="menu-button">🍕 Pizzas</button>
+                <button class="menu-button">🍔 Burgers</button>
+                <button class="menu-button">🥗 Salads</button>
+                <button class="menu-button">🍟 Sides</button>
+                <button class="menu-button">🥤 Drinks</button>
+                <button class="menu-button">🛒 My Cart</button>
+              </div>
+
+              <div class="message-time">9:41 AM</div>
+            </div>
+          </div>
+
+          <div class="message received">
+            <div class="message-content">
+              Or browse our full menu:
+
+              <div class="interactive-list">
+                <div class="list-header">📋 Full Menu Categories</div>
+                <div class="list-item">
+                  <span class="emoji">🍕</span>
+                  <span>Pizza Collection (12 items)</span>
+                </div>
+                <div class="list-item">
+                  <span class="emoji">🍔</span>
+                  <span>Burgers & Sandwiches (8 items)</span>
+                </div>
+                <div class="list-item">
+                  <span class="emoji">🥗</span>
+                  <span>Fresh Salads (6 items)</span>
+                </div>
+                <div class="list-item">
+                  <span class="emoji">🍟</span>
+                  <span>Sides & Appetizers (10 items)</span>
+                </div>
+                <div class="list-item">
+                  <span class="emoji">🥤</span>
+                  <span>Beverages (15 items)</span>
+                </div>
+              </div>
+
+              <div class="message-time">9:41 AM</div>
+            </div>
+          </div>
+
+          <div class="typing-indicator">
+            <span>Mario's Pizza is typing</span>
+            <div class="typing-dots">
+              <span></span>
+              <span></span>
+              <span></span>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </body>
+</html>
