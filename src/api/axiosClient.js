@@ -6,7 +6,7 @@ import { toast } from "react-toastify";
 const apiBaseUrl =
   (process.env.REACT_APP_API_BASE_URL &&
     process.env.REACT_APP_API_BASE_URL.trim()) ||
-  "https://busiorbit-api-hcbyhrg2gafqe6e7.centralindia-01.azurewebsites.net";
+  "https://busiorbit-api-hcbyhrg2gafqe6e7.centralindia-01.azurewebsites.net/api";
 
 // Token storage key (single source of truth)
 export const TOKEN_KEY = "xbyte_token";
