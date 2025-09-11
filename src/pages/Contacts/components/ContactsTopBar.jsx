@@ -1,6 +1,4 @@
 // 📄 File: src/pages/Contacts/components/ContactsTopBar.jsx
-
-import { useState } from "react";
 import { Search, Plus, SlidersHorizontal } from "lucide-react";
 
 export default function ContactsTopBar({
@@ -8,14 +6,9 @@ export default function ContactsTopBar({
   onSearchChange,
   activeTab,
   onTabChange,
+  searchTerm,
+  onFilterClick,
 }) {
-  const [searchTerm, setSearchTerm] = useState("");
-
-  const handleSearch = e => {
-    setSearchTerm(e.target.value);
-    onSearchChange?.(e.target.value);
-  };
-
   const tabs = [
     { key: "all", label: "All" },
     { key: "favourites", label: "Favourites" },
@@ -33,12 +26,15 @@ export default function ContactsTopBar({
             type="text"
             placeholder="Search contacts..."
             value={searchTerm}
-            onChange={handleSearch}
+            onChange={e => onSearchChange?.(e.target.value)}
             className="w-full md:max-w-xs border border-gray-300 rounded-md px-3 py-2 text-sm"
           />
         </div>
         <div className="flex items-center gap-3">
-          <button className="flex items-center gap-2 px-3 py-2 rounded-md text-sm border text-gray-600 border-gray-300 hover:bg-gray-100">
+          <button
+            onClick={onFilterClick}
+            className="flex items-center gap-2 px-3 py-2 rounded-md text-sm border text-gray-600 border-gray-300 hover:bg-gray-100"
+          >
             <SlidersHorizontal size={16} /> Filter
           </button>
           <button

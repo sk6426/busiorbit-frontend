@@ -2,61 +2,173 @@
 import axios from "axios";
 import { toast } from "react-toastify";
 
-// 👉 Set this in your env: REACT_APP_API_BASE_URL=https://busiorbit-api-hcbyhrg2gafqe6e7.centralindia-01.azurewebsites.net
-const apiBaseUrl =
+// Tip: In .env.development.local, set:
+// REACT_APP_API_BASE_URL=https://your-api.azurewebsites.net
+// (with or without /api — we'll normalize)
+
+const rawBase =
   (process.env.REACT_APP_API_BASE_URL &&
     process.env.REACT_APP_API_BASE_URL.trim()) ||
-  "https://busiorbit-api-hcbyhrg2gafqe6e7.centralindia-01.azurewebsites.net/api";
+  "https://busiorbit-api-hcbyhrg2gafqe6e7.centralindia-01.azurewebsites.net";
+
+// Ensure it ends with /api (but not //api)
+function normalizeBaseUrl(url) {
+  const u = url.replace(/\/+$/, ""); // strip trailing slashes
+  return u.endsWith("/api") ? u : `${u}/api`;
+}
+
+const apiBaseUrl = normalizeBaseUrl(rawBase);
 
 // Token storage key (single source of truth)
 export const TOKEN_KEY = "xbyte_token";
 
+// Use Bearer tokens (no cookies)
 const axiosClient = axios.create({
   baseURL: apiBaseUrl,
   headers: {
     "Content-Type": "application/json",
     Accept: "application/json",
   },
-  // ❌ No cookies in Bearer mode
   withCredentials: false,
 });
 
 // 🔐 Attach Authorization header if token exists
 axiosClient.interceptors.request.use(config => {
-  const t = localStorage.getItem(TOKEN_KEY);
-  if (t) config.headers.Authorization = `Bearer ${t}`;
+  const token = localStorage.getItem(TOKEN_KEY);
+  if (token) config.headers.Authorization = `Bearer ${token}`;
   return config;
 });
 
-// ❗Basic error handling
+// Avoid duplicate toasts during a single navigation/error
+let showingAuthToast = false;
+
+// ❗Error handling
 axiosClient.interceptors.response.use(
   res => res,
   error => {
     const status = error?.response?.status;
+    const msg =
+      error?.response?.data?.message ||
+      error?.message ||
+      "❌ Something went wrong.";
+
     if (status === 401) {
       // Not authenticated or token expired
-      const redirectTo = encodeURIComponent(
-        window.location.pathname + window.location.search
-      );
-      toast.error("⏰ Session expired. Please log in again.");
       localStorage.removeItem(TOKEN_KEY);
-      window.location.href = `/login?redirectTo=${redirectTo}`;
-      return;
+
+      const redirectTo = encodeURIComponent(
+        window.location.pathname + window.location.search + window.location.hash
+      );
+
+      if (!showingAuthToast) {
+        toast.error("⏰ Session expired. Please log in again.");
+        showingAuthToast = true;
+        // reset the flag soon to allow future messages
+        setTimeout(() => (showingAuthToast = false), 2000);
+      }
+
+      // Avoid redirect loops if we're already on /login
+      const alreadyOnLogin = window.location.pathname.startsWith("/login");
+      if (!alreadyOnLogin) {
+        window.location.href = `/login?redirectTo=${redirectTo}`;
+      }
+
+      // Always reject so callers can handle if needed
+      return Promise.reject(error);
     }
-    if (status === 403) toast.error("⛔ Access denied.");
-    const msg = error?.response?.data?.message || "❌ Something went wrong.";
-    toast.error(msg);
-    if (process.env.NODE_ENV !== "production")
+
+    if (status === 403) {
+      if (!showingAuthToast) {
+        toast.error("⛔ Access denied.");
+        showingAuthToast = true;
+        setTimeout(() => (showingAuthToast = false), 2000);
+      }
+      return Promise.reject(error);
+    }
+
+    // Generic case
+    if (!showingAuthToast) {
+      toast.error(msg);
+      showingAuthToast = true;
+      setTimeout(() => (showingAuthToast = false), 1500);
+    }
+
+    if (process.env.NODE_ENV !== "production") {
+      // Helpful during dev/E2E
+      // eslint-disable-next-line no-console
       console.error("[Axios Error]", error);
+    }
+
     return Promise.reject(error);
   }
 );
 
 if (process.env.NODE_ENV !== "production") {
+  // eslint-disable-next-line no-console
   console.log("✅ Axios BASE URL:", axiosClient.defaults.baseURL);
 }
 
 export default axiosClient;
+
+// // 📄 src/utils/axiosClient.js
+// import axios from "axios";
+// import { toast } from "react-toastify";
+
+// // 👉 Set this in your env: REACT_APP_API_BASE_URL=https://busiorbit-api-hcbyhrg2gafqe6e7.centralindia-01.azurewebsites.net
+// const apiBaseUrl =
+//   (process.env.REACT_APP_API_BASE_URL &&
+//     process.env.REACT_APP_API_BASE_URL.trim()) ||
+//   "https://busiorbit-api-hcbyhrg2gafqe6e7.centralindia-01.azurewebsites.net/api";
+
+// // Token storage key (single source of truth)
+// export const TOKEN_KEY = "xbyte_token";
+
+// const axiosClient = axios.create({
+//   baseURL: apiBaseUrl,
+//   headers: {
+//     "Content-Type": "application/json",
+//     Accept: "application/json",
+//   },
+//   // ❌ No cookies in Bearer mode
+//   withCredentials: false,
+// });
+
+// // 🔐 Attach Authorization header if token exists
+// axiosClient.interceptors.request.use(config => {
+//   const t = localStorage.getItem(TOKEN_KEY);
+//   if (t) config.headers.Authorization = `Bearer ${t}`;
+//   return config;
+// });
+
+// // ❗Basic error handling
+// axiosClient.interceptors.response.use(
+//   res => res,
+//   error => {
+//     const status = error?.response?.status;
+//     if (status === 401) {
+//       // Not authenticated or token expired
+//       const redirectTo = encodeURIComponent(
+//         window.location.pathname + window.location.search
+//       );
+//       toast.error("⏰ Session expired. Please log in again.");
+//       localStorage.removeItem(TOKEN_KEY);
+//       window.location.href = `/login?redirectTo=${redirectTo}`;
+//       return;
+//     }
+//     if (status === 403) toast.error("⛔ Access denied.");
+//     const msg = error?.response?.data?.message || "❌ Something went wrong.";
+//     toast.error(msg);
+//     if (process.env.NODE_ENV !== "production")
+//       console.error("[Axios Error]", error);
+//     return Promise.reject(error);
+//   }
+// );
+
+// if (process.env.NODE_ENV !== "production") {
+//   console.log("✅ Axios BASE URL:", axiosClient.defaults.baseURL);
+// }
+
+// export default axiosClient;
 
 // // 📄 src/utils/axiosClient.js
 // import axios from "axios";

@@ -1,26 +1,59 @@
-import React from "react";
-import { Edit2 } from "lucide-react";
+import React, { useEffect, useState } from "react";
+import axiosClient from "../../../api/axiosClient";
 
 /**
  * ChatHeader — Professional WhatsApp-style chat header
  * Props:
- * - contact: contact object
- * - onEdit: optional callback
+ * - contactId: contact ID to fetch data
  */
-export default function ChatHeader({ contact, onEdit }) {
+export default function ChatHeader({ contactId }) {
+  const [contact, setContact] = useState(null);
+
+  // Fetch contact data when contactId changes
+  useEffect(() => {
+    if (!contactId) {
+      setContact(null);
+      return;
+    }
+
+    const fetchContact = async () => {
+      try {
+        const res = await axiosClient.get(`/contacts/${contactId}`);
+        // Handle different API response structures
+        if (res?.data?.data) {
+          setContact(res.data.data);
+        } else if (res?.data) {
+          setContact(res.data);
+        } else {
+          setContact(res);
+        }
+      } catch (err) {
+        console.error("❌ [ChatHeader] Failed to load contact:", err);
+      }
+    };
+
+    fetchContact();
+  }, [contactId]);
+
   if (!contact) return null;
 
-  const { name, phoneNumber, tags = [], notes = "" } = contact;
+  const { name, phoneNumber } = contact;
 
-  // 🧠 Extract initials from name
-  const initials = name
-    ?.split(" ")
-    .map(part => part.charAt(0).toUpperCase())
-    .slice(0, 2)
-    .join("");
+  // 🧠 Extract initials from name or phone number
+  const initials =
+    name
+      ?.split(" ")
+      .map(part => part.charAt(0).toUpperCase())
+      .slice(0, 2)
+      .join("") ||
+    phoneNumber?.slice(-2) ||
+    "??";
+
+  // Display name if present, otherwise phone number
+  const displayName = name || phoneNumber || "Unknown Contact";
 
   return (
-    <div className="sticky top-0 z-10 bg-white border-b shadow-sm px-4 py-3 flex items-center justify-between">
+    <div className="bg-white border-b shadow-sm px-4 py-3 flex items-center justify-between">
       {/* Left Section: Avatar + Info */}
       <div className="flex items-center gap-4">
         {/* Avatar with Initials */}
@@ -28,51 +61,16 @@ export default function ChatHeader({ contact, onEdit }) {
           {initials}
         </div>
 
-        {/* Name, Phone, Notes */}
+        {/* Name, Phone */}
         <div className="space-y-0.5">
-          <div className="flex items-center gap-2">
-            <h2 className="text-base font-semibold text-gray-800">{name}</h2>
-            <button
-              onClick={onEdit}
-              className="text-gray-400 hover:text-purple-600"
-              title="Edit Contact"
-            >
-              <Edit2 size={16} />
-            </button>
-          </div>
-          {phoneNumber && (
+          <h2 className="text-base font-semibold text-gray-800">
+            {displayName}
+          </h2>
+          {name && phoneNumber && (
             <div className="text-xs text-gray-500">{phoneNumber}</div>
-          )}
-          {notes && (
-            <div className="text-xs text-gray-600">
-              <span className="font-medium">Notes:</span> {notes}
-            </div>
           )}
         </div>
       </div>
-
-      {/* Tags on right (if any) */}
-      {tags.length > 0 && (
-        <div className="flex flex-wrap gap-2 max-w-sm justify-end">
-          {tags.slice(0, 2).map(tag => (
-            <span
-              key={tag.id}
-              className="text-xs font-medium px-2 py-1 rounded-full"
-              style={{
-                backgroundColor: tag.colorHex || "#666",
-                color: "#fff",
-              }}
-            >
-              {tag.name}
-            </span>
-          ))}
-          {tags.length > 2 && (
-            <span className="text-xs text-gray-400">
-              +{tags.length - 2} more
-            </span>
-          )}
-        </div>
-      )}
     </div>
   );
 }

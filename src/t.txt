@@ -1,0 +1,331 @@
+Folder PATH listing for volume Software
+Volume serial number is DED9-552B
+D:.
+¦   App.css
+¦   App.js
+¦   index.css
+¦   index.js
+¦   logo.svg
+¦   reportWebVitals.js
+¦   setupTests.js
+¦   t.txt
+¦   
++---api
+¦       axiosClient.js
+¦       dashboardService.js
+¦       permissions.js
+¦       plans.js
+¦       templateService.js
+¦       
++---components
+¦   ¦   InlineTimeline.jsx
+¦   ¦   Spinner.jsx
+¦   ¦   StatCard.jsx
+¦   ¦   TimelineEntryCard.jsx
+¦   ¦   WhatsAppBubblePreview.jsx
+¦   ¦   
+¦   +---common
+¦   ¦       TemplatePreviewBubble.jsx
+¦   ¦       ToggleSwitch.jsx
+¦   ¦       UpgradeBanner.jsx
+¦   ¦       UserMenuDropdown.jsx
+¦   ¦       
+¦   +---FeatureAccess
+¦   ¦       FeatureGuard.jsx
+¦   ¦       featureKeyConfig.js
+¦   ¦       
+¦   +---layout
+¦   ¦       AppLayout.jsx
+¦   ¦       SidebarMenu.jsx
+¦   ¦       Topbar.jsx
+¦   ¦       
+¦   +---ui
+¦           button.jsx
+¦           card.jsx
+¦           checkbox.jsx
+¦           ConfirmDeleteModal.jsx
+¦           dialog.jsx
+¦           input.jsx
+¦           label.jsx
+¦           switch.jsx
+¦           tabs.js
+¦           tabs.jsx
+¦           
++---constants
+¦       messageTypes.js
+¦       
++---hooks
+¦       useNotificationSound.js
+¦       usePermission.jsx
+¦       useSignalR.js
+¦       
++---lib
+¦       utils.js
+¦       
++---pages
+¦   ¦   NoAccess.jsx
+¦   ¦   PreviewTest.jsx
+¦   ¦   TenantLogin.jsx
+¦   ¦   
+¦   +---admin
+¦   ¦   ¦   FeatureToggles.jsx
+¦   ¦   ¦   
+¦   ¦   +---FeatureAccess
+¦   ¦           FeatureToggles.jsx
+¦   ¦           FeatureToggleTable.jsx
+¦   ¦           PlanManagement.jsx
+¦   ¦           
+¦   +---auth
+¦   ¦   ¦   BusinessSignup.jsx
+¦   ¦   ¦   Login.css
+¦   ¦   ¦   Login.jsx
+¦   ¦   ¦   PendingApproval.jsx
+¦   ¦   ¦   
+¦   ¦   +---context
+¦   ¦   ¦       AuthContext.jsx
+¦   ¦   ¦       
+¦   ¦   +---hooks
+¦   ¦   ¦       RequireFeature.jsx
+¦   ¦   ¦       useAllFeatureAccess.js
+¦   ¦   ¦       useBusinessId.js
+¦   ¦   ¦       useCompanyName.js
+¦   ¦   ¦       useFeatureAccess.js
+¦   ¦   ¦       useFeatureStatus.js
+¦   ¦   ¦       usePlan.js
+¦   ¦   ¦       useRole.js
+¦   ¦   ¦       
+¦   ¦   +---services
+¦   ¦   ¦       authService.js
+¦   ¦   ¦       
+¦   ¦   +---utils
+¦   +---AutoReplyBuilder
+¦   ¦   ¦   AutoReplyBuilder.jsx
+¦   ¦   ¦   AutoReplyFlowManager.jsx
+¦   ¦   ¦   
+¦   ¦   +---components
+¦   ¦           AutoReplyCanvas.jsx
+¦   ¦           AutoReplyNodeBlock.jsx
+¦   ¦           AutoReplyNodeEditor.jsx
+¦   ¦           AutoReplyNodeStart.jsx
+¦   ¦           AutoReplySidebar.jsx
+¦   ¦           WhatsAppTemplatePreview.jsx
+¦   ¦           
+¦   +---Businesses
+¦   ¦       BusinessApprovals.jsx
+¦   ¦       CatalogDashboard.jsx
+¦   ¦       Dashboard.jsx
+¦   ¦       Dashboard_old.jsx
+¦   ¦       MessageHistory.jsx
+¦   ¦       ProductCatalog.jsx
+¦   ¦       ProductForm.jsx
+¦   ¦       ProfileCompletion.jsx
+¦   ¦       
+¦   +---Campaigns
+¦   ¦   ¦   AssignContactsPage.jsx
+¦   ¦   ¦   CampaignBuilderPage.jsx
+¦   ¦   ¦   CampaignCreateSingle.jsx
+¦   ¦   ¦   CampaignList.jsx
+¦   ¦   ¦   CampaignRecipientsPage.jsx
+¦   ¦   ¦   CampaignSendLogs.jsx
+¦   ¦   ¦   CampaignWizard.jsx
+¦   ¦   ¦   ImageCampaignDetailPage.jsx
+¦   ¦   ¦   ImageCampaignEditPage.jsx
+¦   ¦   ¦   ImageCampaignListPage.jsx
+¦   ¦   ¦   ImageCampaignPage.jsx
+¦   ¦   ¦   TemplateCampaignList.jsx
+¦   ¦   ¦   
+¦   ¦   +---Analytics
+¦   ¦   ¦       CampaignDashboard.jsx
+¦   ¦   ¦       
+¦   ¦   +---components
+¦   ¦   ¦   ¦   CampaignButtonsForm.jsx
+¦   ¦   ¦   ¦   CampaignSummaryBar.jsx
+¦   ¦   ¦   ¦   ContactJourneyModal.jsx
+¦   ¦   ¦   ¦   ContactSelector.jsx
+¦   ¦   ¦   ¦   MessagePreviewModal.jsx
+¦   ¦   ¦   ¦   RecipientsListPage.jsx
+¦   ¦   ¦   ¦   TagFilterDropdown.jsx
+¦   ¦   ¦   ¦   WhatsAppBubblePreview.jsx
+¦   ¦   ¦   ¦   
+¦   ¦   ¦   +---Dashboard
+¦   ¦   ¦           CampaignStatsWidget.jsx
+¦   ¦   ¦           CrmGrowthWidget.jsx
+¦   ¦   ¦           QuickActionsWidget.jsx
+¦   ¦   ¦           TopCampaignsWidget.jsx
+¦   ¦   ¦           
+¦   ¦   +---steps
+¦   ¦   ¦       StepCampaignDetails.jsx
+¦   ¦   ¦       StepContactSelect.jsx
+¦   ¦   ¦       StepTemplateSelect.jsx
+¦   ¦   ¦       
+¦   ¦   +---tabs
+¦   ¦           CampaignInfoTab.jsx
+¦   ¦           CTAButtonsTab.jsx
+¦   ¦           MessageBuilderTab.jsx
+¦   ¦           MessageTypeTab.jsx
+¦   ¦           PreviewSendTab.jsx
+¦   ¦           RecipientsTab.jsx
+¦   ¦           
+¦   +---Contacts
+¦   ¦   ¦   ContactForm.jsx
+¦   ¦   ¦   ContactList.jsx
+¦   ¦   ¦   Contacts.jsx
+¦   ¦   ¦   ContactsTopBar.jsx
+¦   ¦   ¦   CsvUploadModal.jsx
+¦   ¦   ¦   
+¦   ¦   +---components
+¦   ¦           BulkActionsBar.jsx
+¦   ¦           checkbox.jsx
+¦   ¦           ContactFormModal.jsx
+¦   ¦           ContactsTable.jsx
+¦   ¦           ContactsTopBar.jsx
+¦   ¦           dropdown-menu.jsx
+¦   ¦           
+¦   +---CrmAnalytics
+¦   ¦       ContactTrendsChart.jsx
+¦   ¦       CrmAnalyticsDashboard.jsx
+¦   ¦       
+¦   +---CTAFlowBuilder
+¦   ¦       api.js
+¦   ¦       CTAFlowBuilder.jsx
+¦   ¦       FlowArrowLayer.jsx
+¦   ¦       FlowForm.jsx
+¦   ¦       FlowStepCard.jsx
+¦   ¦       StepDrawer.jsx
+¦   ¦       VisualFlowMap.jsx
+¦   ¦       VisualFlowPreview.jsx
+¦   ¦       
+¦   +---CTAFlowVisualBuilder
+¦   ¦   ¦   CTAFlowLogs.jsx
+¦   ¦   ¦   CTAFlowManager.jsx
+¦   ¦   ¦   ctaFlowVisualApi.js
+¦   ¦   ¦   CTAFlowVisualBuilder.jsx
+¦   ¦   ¦   PublishedFlowView.jsx
+¦   ¦   ¦   
+¦   ¦   +---components
+¦   ¦           FlowNodeBubble.jsx
+¦   ¦           TemplatePickerModal.jsx
+¦   ¦           
+¦   +---CTAManagement
+¦   ¦       CTAManagement.jsx
+¦   ¦       
+¦   +---CTATimeline
+¦   ¦       EmptyTimelineState.jsx
+¦   ¦       LeadTimeline.jsx
+¦   ¦       LeadTimeline_old.jsx
+¦   ¦       TimelineEventCard.jsx
+¦   ¦       timelineUtils.js
+¦   ¦       
+¦   +---DevTools
+¦   ¦       CTATester.jsx
+¦   ¦       
+¦   +---FeatureAccess
+¦   ¦       FeatureSummaryCard.jsx
+¦   ¦       FeatureTogglePage.jsx
+¦   ¦       FeatureToggles.jsx
+¦   ¦       
+¦   +---FlowAnalytics
+¦   ¦       FlowAnalyticsDashboard.jsx
+¦   ¦       StepJourneyBreakdown.jsx
+¦   ¦       
+¦   +---html pages
+¦   ¦       bestexample.html
+¦   ¦       
+¦   +---Inbox
+¦   ¦   ¦   InboxWrapper.jsx
+¦   ¦   ¦   
+¦   ¦   +---components
+¦   ¦           ChatBubble.jsx
+¦   ¦           ChatHeader.jsx
+¦   ¦           ChatInput.jsx
+¦   ¦           ChatWindow.jsx
+¦   ¦           ContactSidebar.jsx
+¦   ¦           InboxSidebar.jsx
+¦   ¦           
+¦   +---MessageStatus
+¦   ¦       StatusTable.jsx
+¦   ¦       StatusTracker.jsx
+¦   ¦       
+¦   +---Messaging
+¦   ¦       ContactSelector.jsx
+¦   ¦       MessageComposer.jsx
+¦   ¦       SendMessage.jsx
+¦   ¦       SendMessagePage-Filter.jsx
+¦   ¦       SendMessagePage.jsx
+¦   ¦       TemplateSender.jsx
+¦   ¦       
+¦   +---Notes
+¦   ¦       NoteForm.jsx
+¦   ¦       NoteList.jsx
+¦   ¦       Notes.jsx
+¦   ¦       NotesWrapper.jsx
+¦   ¦       
+¦   +---Plans
+¦   ¦       FeatureComparison.jsx
+¦   ¦       PlanSelectWidget.jsx
+¦   ¦       UpgradePlanPage.jsx
+¦   ¦       
+¦   +---Reminders
+¦   ¦       ReminderForm.jsx
+¦   ¦       ReminderList.jsx
+¦   ¦       Reminders.jsx
+¦   ¦       
+¦   +---ReportingModule
+¦   ¦       DirectMessageHistory.jsx
+¦   ¦       
+¦   +---SendTemplate
+¦   ¦       SendTemplate.jsx
+¦   ¦       
+¦   +---SendWhatsAppMessage
+¦   ¦       MessageTabs.css
+¦   ¦       TemplateMessageTab.jsx
+¦   ¦       TextMessageTab.jsx
+¦   ¦       
+¦   +---Tags
+¦   ¦       TagForm.jsx
+¦   ¦       TagList.jsx
+¦   ¦       Tags.jsx
+¦   ¦       TagSelector.jsx
+¦   ¦       
+¦   +---Tracking
+¦   ¦       FailedWebhookLogs.jsx
+¦   ¦       TrackingLogDetail.jsx
+¦   ¦       TrackingViewer.jsx
+¦   ¦       WebhookSettings.jsx
+¦   ¦       
+¦   +---UserPermissions
+¦   ¦       PermissionCheckboxList.jsx
+¦   ¦       UserPermissions.jsx
+¦   ¦       UserPermissionsPage.jsx
+¦   ¦       
+¦   +---WhatsAppMessageEngine
+¦   ¦       SendTemplateMessagePage.jsx
+¦   ¦       SendTextMessagePage.jsx
+¦   ¦       
+¦   +---WhatsAppSettings
+¦   ¦       WhatsAppSettings.jsx
+¦   ¦       
+¦   +---Workspaces
+¦           AdminWorkspacePage.jsx
+¦           AutomationWorkspace.jsx
+¦           CampaignWorkspacePage.jsx
+¦           CatalogWorkspacePage.jsx
+¦           CrmWorkspacePage.jsx
+¦           DashboardWorkspace.jsx
+¦           FlowBuilderWorkspace.jsx
+¦           InsightsWorkspacePage.jsx
+¦           MessagingWorkspacePage.jsx
+¦           
++---routes
+¦       AdminRouteGuard.jsx
+¦       ProtectedRoute.jsx
+¦       
++---services
+¦       api.js
+¦       
++---utils
+        buildTrackingUrl.js
+        icons.js
+        jwt.js
+        toastHelper.js
+        

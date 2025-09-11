@@ -1,0 +1,26 @@
+project: xbytechat
+stack: dotnet8-react
+paths:
+  api:
+    solution: xbytechat-api/xbytechat.sln
+    run: dotnet run --project xbytechat-api --urls=http://localhost:7113
+    build: dotnet build
+    test: dotnet test
+  ui:
+    dir: xbytechat-ui
+    dev: npm start
+    build: npm ci && npm run build
+    e2e: npm run e2e
+e2e:
+  baseUrl: http://localhost:3000
+  loginEnv:
+    user: E2E_USER
+    pass: E2E_PASS
+deploy:
+  provider: azure-webapp
+  healthUrl: http://localhost:7113/api/health/ping
+policies:
+  requireHumanApprovalFor:
+    - deploy
+    - secretChanges
+    - schemaMigrations

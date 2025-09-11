@@ -1,0 +1,17 @@
+{
+  "repoName": "xbytechat-ui",
+  "branchPrefix": "feat/agent",
+  "testCommand": "npx playwright test",
+  "contextGlobs": [
+    "src/**/*",
+    "tests/e2e/**/*",
+    "playwright.config.ts",
+    "package.json"
+  ],
+  "contextMaxFiles": 120,
+  "allowedWriteRoots": [
+    "src",
+    "tests",
+    "orchestrator"
+  ]
+}

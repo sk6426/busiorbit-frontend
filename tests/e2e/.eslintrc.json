@@ -1,0 +1,9 @@
+{
+  "extends": ["plugin:playwright/recommended"],
+  "plugins": ["playwright"],
+  "rules": {
+    "testing-library/prefer-screen-queries": "off",
+    "testing-library/no-node-access": "off",
+    "testing-library/no-container": "off"
+  }
+}

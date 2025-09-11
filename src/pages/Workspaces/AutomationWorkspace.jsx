@@ -1,7 +1,10 @@
+// 📄 src/pages/Workspaces/AutomationWorkspace.jsx
+
 import {
   MessageCircleHeart,
-  UserCog,
-  Bot,
+  RefreshCcw,
+  ShieldCheck,
+  MessageSquareText,
   ArrowRightCircle,
   MoreVertical,
   Archive,
@@ -9,67 +12,95 @@ import {
   FileBarChart,
 } from "lucide-react";
 import { useNavigate } from "react-router-dom";
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import { DragDropContext, Droppable, Draggable } from "react-beautiful-dnd";
-import { useAuth } from "../auth/context/AuthContext";
 
-// 🟢 Cards for the Automation (AutoReply) Workspace
+// ✅ server-authoritative perms
+import { useAuth } from "../../app/providers/AuthProvider";
+// ✅ centralized capability keys
+import { FK } from "../../capabilities/featureKeys";
+
+// Map blocks → permission codes (covers Automation + Flow)
+
+const PERM_BY_BLOCK = {
+  "create-template-flow": [FK?.AUTOMATION_CREATE_TEMPLATE_FLOW],
+  "create-auto-reply-bot": [FK?.AUTOMATION_CREATE_TEMPLATE_PLUS_FREE_TEXT_FLOW],
+  "flow-manager": [FK?.AUTOMATION_VIEW_TEMPLATE_FLOW_MANGE],
+
+  "flow-analytics": [FK?.AUTOMATION_VIEW_TEMPLATE_PLUS_FREETEXT_FLOW_ANALYTICS],
+  "test-trigger": [FK?.AUTOMATION_TRIGGER_TEST],
+};
 const automationBlocks = [
   {
-    id: "auto-reply-flows",
-    label: "Auto Reply Flows",
-    description:
-      "View and manage all auto-reply flows (bots) for incoming WhatsApp messages.",
-    path: "/app/automation/auto-reply-flows", // Dummy path, update later
-    icon: <Bot className="text-indigo-600" size={22} />,
-    action: "Manage Flows",
-    featureKey: "Automation", // Use proper feature key if you want to protect
+    id: "create-template-flow",
+    label: "Create Template Flow",
+    description: "Visually design the flow using a drag-and-drop builder.",
+    path: "/app/cta-flow/visual-builder",
+    icon: <RefreshCcw className="text-indigo-500" size={22} />,
+    action: "Create Template Flow",
   },
+
   {
-    id: "create-auto-reply",
+    id: "create-auto-reply-bot",
     label: "Create Auto Reply Bot",
     description:
       "Design an automated bot to reply to specific keywords, triggers or contacts.",
-    path: "/app/automation/auto-reply-builder", // Dummy path
+    path: "/app/automation/auto-reply-builder",
     icon: <MessageCircleHeart className="text-purple-600" size={22} />,
     action: "Create Bot",
-    featureKey: "Automation",
   },
   {
-    id: "user-bot-assignments",
-    label: "User–Bot Assignments",
-    description: "Assign bots to specific users, teams, or business hours.",
-    path: "/app/automation/bot-assignments", // Dummy path
-    icon: <UserCog className="text-green-600" size={22} />,
-    action: "Assign",
-    featureKey: "Automation",
+    id: "flow-manager",
+    label: "Flow Manager",
+    description: "Organize and manage all auto-reply flows.",
+    path: "/app/cta-flow/flow-manager",
+    icon: <MessageSquareText className="text-green-600" size={22} />,
+    action: "Flow Manager",
   },
+
   {
-    id: "automation-analytics",
-    label: "Automation Analytics",
-    description: "Analyze response rates and auto-reply effectiveness.",
-    path: "/app/automation/analytics", // Dummy path
+    id: "flow-analytics",
+    label: "Flow Analytics",
+    description: "Analyze visual flows and CTA button performance.",
+    path: "/app/campaigns/FlowAnalyticsDashboard",
     icon: <FileBarChart className="text-teal-600" size={22} />,
-    action: "View Analytics",
-    featureKey: "Automation",
+    action: "Open Dashboard",
+  },
+  {
+    id: "test-trigger",
+    label: "Trigger Tester",
+    description: "Simulate CTA button clicks to test automation logic.",
+    path: "/app/devtools/cta-tester",
+    icon: <ShieldCheck className="text-green-500" size={22} />,
+    action: "Run Test",
   },
 ];
 
 export default function AutomationWorkspace() {
   const navigate = useNavigate();
-  const { availableFeatures = {}, isLoading } = useAuth();
+  const { isLoading, can, hasAllAccess } = useAuth();
 
-  const [pinned, setPinned] = useState(() =>
+  // --- LocalStorage keys stay under "automation-*"
+  const [pinned, setPinned] = useState(
     JSON.parse(localStorage.getItem("automation-pinned") || "[]")
   );
-  const [archived, setArchived] = useState(() =>
+  const [archived, setArchived] = useState(
     JSON.parse(localStorage.getItem("automation-archived") || "[]")
   );
-  const [order, setOrder] = useState(
-    () =>
-      JSON.parse(localStorage.getItem("automation-order")) ||
-      automationBlocks.map(b => b.id)
-  );
+
+  // Seed order with all current block ids; if user has an older order saved,
+  // reconcile so new tiles appear at the end.
+  const allIds = useMemo(() => automationBlocks.map(b => b.id), []);
+  const storedOrder =
+    JSON.parse(localStorage.getItem("automation-order") || "null") || [];
+  const initialOrder = useMemo(() => {
+    if (!Array.isArray(storedOrder) || storedOrder.length === 0) return allIds;
+    const known = storedOrder.filter(id => allIds.includes(id));
+    const missing = allIds.filter(id => !known.includes(id));
+    return [...known, ...missing];
+  }, [allIds]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  const [order, setOrder] = useState(initialOrder);
   const [showArchived, setShowArchived] = useState(false);
 
   const togglePin = id => {
@@ -97,17 +128,13 @@ export default function AutomationWorkspace() {
     localStorage.setItem("automation-order", JSON.stringify(newOrder));
   };
 
-  const hasFeature = key => availableFeatures[key];
+  const canAny = codes => hasAllAccess || (codes || []).some(code => can(code));
 
   const visibleBlocks = order
-    .filter(id => {
-      const block = automationBlocks.find(b => b.id === id);
-      if (!block) return false;
-      if (!showArchived && archived.includes(id)) return false;
-      if (block.featureKey && !hasFeature(block.featureKey)) return false;
-      return true;
-    })
-    .map(id => automationBlocks.find(b => b.id === id));
+    .map(id => automationBlocks.find(b => b.id === id))
+    .filter(Boolean)
+    .filter(b => (showArchived ? true : !archived.includes(b.id)))
+    .filter(b => canAny(PERM_BY_BLOCK[b.id]));
 
   if (isLoading)
     return (

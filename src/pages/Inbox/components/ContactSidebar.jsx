@@ -83,8 +83,6 @@ export default function ContactSidebar({ contactId }) {
   if (!contact) return <div className="p-4 text-gray-500">Loading...</div>;
 
   const {
-    name,
-    phoneNumber,
     createdAt,
     tags = [],
     notes = [],
@@ -93,34 +91,11 @@ export default function ContactSidebar({ contactId }) {
     sessionStatus = "Active",
   } = contact;
 
-  const initials = name
-    ?.split(" ")
-    .map(n => n[0])
-    .join("")
-    .substring(0, 2)
-    .toUpperCase();
-
   return (
-    <div className="p-4 text-sm overflow-y-auto h-full">
-      {/* 🔹 Top Header */}
-      <div className="flex items-center gap-4 mb-4">
-        <div className="w-10 h-10 rounded-full bg-green-600 text-white flex items-center justify-center font-semibold text-sm">
-          {initials}
-        </div>
-        <div>
-          <h2 className="font-semibold text-gray-800 flex items-center gap-2">
-            {name}
-            {sessionStatus === "Active" && (
-              <span
-                className="ml-1 inline-block w-2 h-2 rounded-full bg-green-500 animate-pulse"
-                title="Active session"
-              ></span>
-            )}
-          </h2>
-          <div className="text-xs text-gray-500">{phoneNumber}</div>
-        </div>
-      </div>
-
+    <div
+      className="p-4 text-sm overflow-y-auto"
+      style={{ height: "100%", maxHeight: "100%" }}
+    >
       {/* 🧱 Tab Switcher */}
       <div className="flex mb-4 border rounded-md overflow-hidden text-sm">
         <button

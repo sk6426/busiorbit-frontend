@@ -1,6 +1,11 @@
 import React, { useState, useRef, useEffect } from "react";
 import dayjs from "dayjs";
-import { FaCheck, FaCheckDouble } from "react-icons/fa";
+import {
+  FaCheck,
+  FaCheckDouble,
+  FaClock,
+  FaExclamationCircle,
+} from "react-icons/fa";
 
 export default function ChatBubble({ message, isOwn }) {
   const [expanded, setExpanded] = useState(false);
@@ -48,6 +53,15 @@ export default function ChatBubble({ message, isOwn }) {
             {time}
             {isOwn && (
               <>
+                {/* {message.status === "Sent" && <FaCheck />}
+                {message.status === "Delivered" && <FaCheckDouble />}
+                {message.status === "Read" && (
+                  <FaCheckDouble className="text-blue-400" />
+                )} */}
+                {message.status === "Sending" && <FaClock />}
+                {message.status === "Failed" && (
+                  <FaExclamationCircle className="text-red-400" />
+                )}
                 {message.status === "Sent" && <FaCheck />}
                 {message.status === "Delivered" && <FaCheckDouble />}
                 {message.status === "Read" && (

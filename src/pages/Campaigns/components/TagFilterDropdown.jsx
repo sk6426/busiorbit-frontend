@@ -11,7 +11,7 @@ export default function TagFilterDropdown({ selectedTags, onChange }) {
   useEffect(() => {
     const fetchTags = async () => {
       try {
-        const res = await axiosClient.get("/tags");
+        const res = await axiosClient.get("/tags/get-tags");
         const allTags = Array.isArray(res.data)
           ? res.data
           : res.data?.data || [];
