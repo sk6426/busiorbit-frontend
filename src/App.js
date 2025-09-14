@@ -469,7 +469,16 @@ function App() {
           <Route path="crm/timeline" element={<LeadTimeline />} />
 
           {/* Admin (tools) */}
-          <Route path="admin/approvals" element={<BusinessApprovals />} />
+          {/* <Route path="admin/approvals" element={<BusinessApprovals />} /> */}
+          <Route
+            path="admin/approvals"
+            element={
+              <FeatureGuard featureKey={FK.ADMIN_BUSINESS_APPROVE}>
+                <BusinessApprovals />
+              </FeatureGuard>
+            }
+          />
+
           <Route path="admin/features" element={<FeatureToggles />} />
           <Route path="admin/plans" element={<PlanManagement />} />
           <Route
