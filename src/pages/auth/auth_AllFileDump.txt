@@ -1,0 +1,2314 @@
+Folder and File Content Report
+ 
+====================================================== 
+FILE: D:\xbytechat\xbytechat-ui\src\pages\auth\access.ts 
+====================================================== 
+ 
+// Shared helpers so tests/guards use identical logic
+
+export function canUseFeature({
+  role,
+  hasAllAccess = false,
+  availableFeatures = {},
+  required,
+}: {
+  role?: string;
+  hasAllAccess?: boolean;
+  availableFeatures?: Record<string, boolean>;
+  required?: { role?: string[]; featureKeys?: string[] };
+}): boolean {
+  if (!required) return true;
+  if (hasAllAccess || role === "superadmin") return true;
+
+  if (required.role && !required.role.includes(role ?? "")) return false;
+
+  if (required.featureKeys?.length) {
+    return required.featureKeys.every(k => !!availableFeatures[k]);
+  }
+  return true;
+}
+
+export function hasRequiredPerms({
+  can,
+  perms,
+  requireAll = false,
+  hasAllAccess = false,
+}: {
+  can?: (perm: string) => boolean;
+  perms?: string[]; // e.g. ["messaging.inbox.view"]
+  requireAll?: boolean;
+  hasAllAccess?: boolean;
+}): boolean {
+  if (!perms?.length) return true;
+  if (hasAllAccess) return true;
+  if (!can) return false;
+  return requireAll ? perms.every(p => can(p)) : perms.some(p => can(p));
+}
+ 
+ 
+====================================================== 
+FILE: D:\xbytechat\xbytechat-ui\src\pages\auth\auth_AllFileDump.txt 
+====================================================== 
+ 
+Folder and File Content Report
+ 
+====================================================== 
+FILE: D:\xbytechat\xbytechat-ui\src\pages\auth\access.ts 
+====================================================== 
+ 
+// Shared helpers so tests/guards use identical logic
+
+export function canUseFeature({
+  role,
+  hasAllAccess = false,
+  availableFeatures = {},
+  required,
+}: {
+  role?: string;
+  hasAllAccess?: boolean;
+  availableFeatures?: Record<string, boolean>;
+  required?: { role?: string[]; featureKeys?: string[] };
+}): boolean {
+  if (!required) return true;
+  if (hasAllAccess || role === "superadmin") return true;
+
+  if (required.role && !required.role.includes(role ?? "")) return false;
+
+  if (required.featureKeys?.length) {
+    return required.featureKeys.every(k => !!availableFeatures[k]);
+  }
+  return true;
+}
+
+export function hasRequiredPerms({
+  can,
+  perms,
+  requireAll = false,
+  hasAllAccess = false,
+}: {
+  can?: (perm: string) => boolean;
+  perms?: string[]; // e.g. ["messaging.inbox.view"]
+  requireAll?: boolean;
+  hasAllAccess?: boolean;
+}): boolean {
+  if (!perms?.length) return true;
+  if (hasAllAccess) return true;
+  if (!can) return false;
+  return requireAll ? perms.every(p => can(p)) : perms.some(p => can(p));
+}
+ 
+ 
+====================================================== 
+FILE: D:\xbytechat\xbytechat-ui\src\pages\auth\auth_AllFileDump.txt 
+====================================================== 
+ 
+Folder and File Content Report
+ 
+================= 
+ 
+====================================================== 
+FILE: D:\xbytechat\xbytechat-ui\src\pages\auth\BusinessSignup.jsx 
+====================================================== 
+ 
+import { useState } from "react";
+import { Link } from "react-router-dom";
+import axiosClient from "../../api/axiosClient"; // ✅ Added axiosClient import
+
+function BusinessSignup() {
+  const [form, setForm] = useState({
+    companyName: "",
+    email: "",
+    password: "",
+  });
+
+  const [loading, setLoading] = useState(false);
+  const [successMsg, setSuccessMsg] = useState("");
+  const [error, setError] = useState("");
+
+  const handleChange = e => {
+    setForm({ ...form, [e.target.name]: e.target.value });
+  };
+
+  const handleSubmit = async e => {
+    e.preventDefault();
+    setLoading(true);
+    setSuccessMsg("");
+    setError("");
+
+    try {
+      const response = await axiosClient.post(
+        "/auth/business-user-signup",
+        form
+      );
+
+      if (!response.data.success) {
+        throw new Error(response.data.message || "Signup failed. Try again.");
+      }
+
+      setSuccessMsg(
+        "✅ Signup successful! We'll review and approve your account."
+      );
+      setForm({ companyName: "", email: "", password: "" });
+    } catch (err) {
+      setError(
+        err?.response?.data?.message || err.message || "❌ Signup failed."
+      );
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  return (
+    <div className="min-h-screen bg-gradient-to-br from-purple-100 to-purple-200 flex items-center justify-center px-6 md:px-20 lg:px-36">
+      <div className="flex flex-col md:flex-row w-full max-w-6xl shadow-2xl rounded-3xl overflow-hidden bg-white">
+        {/* Left Image Section */}
+        <div className="md:w-1/2 hidden md:block">
+          <img
+            src="/loginpage_.png"
+            alt="Marketing Visual"
+            className="h-full w-full object-cover"
+          />
+        </div>
+
+        {/* Right Signup Form */}
+        <div className="w-full md:w-1/2 flex flex-col justify-center px-8 sm:px-12 md:px-16 lg:px-20 py-12">
+          <div className="flex justify-center mb-4">
+            <img src="/logo_5.svg" alt="xByteChat Logo" className="h-10" />
+          </div>
+
+          <h2 className="text-2xl font-bold text-center text-purple-800 mb-6">
+            Create Your <span className="text-purple-900">xByteChat</span>{" "}
+            Profile
+          </h2>
+
+          {successMsg && (
+            <div className="bg-green-100 text-green-700 p-3 rounded-lg mb-4 text-sm text-center font-medium shadow">
+              {successMsg}
+            </div>
+          )}
+          {error && (
+            <div className="bg-red-100 text-red-700 p-3 rounded-lg mb-4 text-sm text-center font-medium shadow">
+              {error}
+            </div>
+          )}
+
+          <form onSubmit={handleSubmit} className="space-y-5">
+            <div>
+              <label className="text-sm font-semibold text-gray-700">
+                Company Name
+              </label>
+              <input
+                type="text"
+                name="companyName"
+                value={form.companyName}
+                onChange={handleChange}
+                required
+                className="mt-1 w-full p-2 px-4 border border-gray-300 rounded-lg shadow-sm focus:outline-none focus:ring-2 focus:ring-purple-500 transition"
+              />
+            </div>
+
+            <div>
+              <label className="text-sm font-semibold text-gray-700">
+                Email
+              </label>
+              <input
+                type="email"
+                name="email"
+                value={form.email}
+                onChange={handleChange}
+                required
+                className="mt-1 w-full p-2 px-4 border border-gray-300 rounded-lg shadow-sm focus:outline-none focus:ring-2 focus:ring-purple-500 transition"
+              />
+            </div>
+
+            <div>
+              <label className="text-sm font-semibold text-gray-700">
+                Password
+              </label>
+              <input
+                type="password"
+                name="password"
+                value={form.password}
+                onChange={handleChange}
+                required
+                minLength={6}
+                className="mt-1 w-full p-2 px-4 border border-gray-300 rounded-lg shadow-sm focus:outline-none focus:ring-2 focus:ring-purple-500 transition"
+              />
+            </div>
+
+            <button
+              type="submit"
+              disabled={loading}
+              className="w-full bg-purple-600 hover:bg-purple-700 text-white py-2 rounded-lg font-medium transition disabled:opacity-60"
+            >
+              {loading ? "Creating profile..." : "Create Profile"}
+            </button>
+          </form>
+
+          <div className="text-center mt-5 text-sm text-gray-600">
+            Already have an account?{" "}
+            <Link
+              to="/login"
+              className="text-purple-600 hover:underline font-medium"
+            >
+              Login
+            </Link>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+export default BusinessSignup;
+ 
+ 
+====================================================== 
+FILE: D:\xbytechat\xbytechat-ui\src\pages\auth\ExtrackAllFiles.bat 
+====================================================== 
+ 
+@echo off
+REM This script will find all files and output their name and content into one file.
+REM The output file will be named [FolderName]_AllFileDump.txt.
+
+REM Get the current folder's name and set it as the output file name with the custom suffix
+for %%I in ("%cd%") do set "outputFile=%%~nI_AllFileDump.txt"
+
+REM Clear the output file to start fresh
+> "%outputFile%" (echo Folder and File Content Report)
+echo. >> "%outputFile%"
+
+REM Loop through all files in the current directory and subdirectories
+for /R . %%F in (*.*) do (
+    echo ====================================================== >> "%outputFile%"
+    echo FILE: %%F >> "%outputFile%"
+    echo ====================================================== >> "%outputFile%"
+    echo. >> "%outputFile%"
+    type "%%F" >> "%outputFile%" 2>nul
+    echo. >> "%outputFile%"
+    echo. >> "%outputFile%"
+)
+
+echo Finished! All content has been extracted to %outputFile% 
+ 
+====================================================== 
+FILE: D:\xbytechat\xbytechat-ui\src\pages\auth\guardLogger.ts 
+====================================================== 
+ 
+// src/auth/guardLogger.ts
+export function logGuard(event: {
+  where: string; // "ProtectedRoute:/app/admin/plan-manager"
+  role: string;
+  plan?: string;
+  required?: { role?: string[]; featureKeys?: string[] };
+  availableFeatures?: Record<string, boolean>;
+  allowed: boolean;
+}) {
+  if (process.env.NODE_ENV === "production") return;
+  // eslint-disable-next-line no-console
+  console.info("[guard]", event);
+}
+ 
+ 
+====================================================== 
+FILE: D:\xbytechat\xbytechat-ui\src\pages\auth\Login.css 
+====================================================== 
+ 
+.login-page-wrapper {
+  position: relative;
+  min-height: 100vh;
+  background: #f9f9ff;
+  overflow: hidden;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.bg-animation {
+  position: absolute;
+  width: 200%;
+  height: 200%;
+  background: linear-gradient(-45deg, #a78bfa, #fcd34d, #ec4899, #6366f1);
+  background-size: 400% 400%;
+  animation: gradient 15s ease infinite;
+  filter: blur(100px);
+  z-index: 0;
+}
+
+.floating-shape {
+  position: absolute;
+  width: 80px;
+  height: 80px;
+  background: rgba(255, 255, 255, 0.15);
+  border-radius: 50%;
+  animation: float 12s ease-in-out infinite;
+  z-index: 0;
+}
+.floating-shape:nth-child(2) {
+  top: 10%;
+  left: 15%;
+  animation-delay: 1s;
+}
+.floating-shape:nth-child(3) {
+  bottom: 10%;
+  right: 20%;
+  animation-delay: 2s;
+}
+@keyframes float {
+  0%,
+  100% {
+    transform: translateY(0) rotate(0deg);
+  }
+  50% {
+    transform: translateY(-20px) rotate(180deg);
+  }
+}
+
+.login-form-container {
+  position: relative;
+  z-index: 2;
+  background: rgba(255, 255, 255, 0.75);
+  backdrop-filter: blur(20px);
+  border-radius: 1.5rem;
+  padding: 2.5rem;
+  box-shadow: 0 10px 40px rgba(0, 0, 0, 0.15);
+  width: 100%;
+  max-width: 420px;
+  animation: fadeIn 1s ease forwards;
+}
+
+@keyframes fadeIn {
+  from {
+    opacity: 0;
+    transform: translateY(20px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.login-form-container h2 {
+  font-size: 1.75rem;
+  margin-bottom: 1.5rem;
+  color: #4f46e5;
+}
+
+.login-form-container input {
+  transition: all 0.3s ease;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.05);
+}
+.login-form-container input:focus {
+  border-color: #a78bfa;
+  box-shadow: 0 0 0 3px rgba(167, 139, 250, 0.3);
+}
+
+.login-form-container button {
+  background: linear-gradient(to right, #8b5cf6, #6366f1);
+  font-weight: 600;
+  transition: all 0.3s ease;
+}
+.login-form-container button:hover {
+  background: linear-gradient(to right, #7c3aed, #4f46e5);
+  transform: translateY(-1px);
+}
+ 
+ 
+====================================================== 
+FILE: D:\xbytechat\xbytechat-ui\src\pages\auth\Login.jsx 
+====================================================== 
+ 
+// 📄 src/pages/auth/Login.jsx
+import React, { useState } from "react";
+import { useNavigate, Link } from "react-router-dom";
+import { toast } from "react-toastify";
+import { login } from "./services/authService";
+import { useAuth } from "./context/pld_AuthContext";
+
+const Login = () => {
+  const navigate = useNavigate();
+  const { refreshAuthContext } = useAuth();
+
+  const [email, setEmail] = useState("");
+  const [password, setPassword] = useState("");
+  const [error, setError] = useState("");
+  const [loading, setLoading] = useState(false);
+  const [showPassword, setShowPassword] = useState(false);
+
+  const routeForStatus = (status = "") => {
+    const s = String(status).toLowerCase();
+    if (s === "profilepending") return "/app/profile-completion";
+    if (s === "pending" || s === "underreview") return "/pending-approval";
+    if (s === "suspended" || s === "blocked") return "/no-access";
+    return "/app";
+  };
+
+  const handleSubmit = async e => {
+    e.preventDefault();
+    setError("");
+    setLoading(true);
+
+    try {
+      // 🔐 Do login; our authService returns { success, status, role, ... }
+      const res = await login(email, password);
+
+      // refresh context (server-authoritative)
+      await refreshAuthContext();
+
+      // 🔁 Bust cached auth state across tabs/sessions
+      try {
+        localStorage.setItem("xb_session_stamp", String(Date.now()));
+        localStorage.removeItem("messaging-pinned");
+        localStorage.removeItem("messaging-archived");
+        localStorage.removeItem("messaging-order");
+      } catch {}
+
+      const next = routeForStatus(res?.status);
+      if (next === "/app/profile-completion") {
+        toast.info("🧩 Please complete your profile to continue.");
+      } else if (next === "/pending-approval") {
+        toast.warn("⏳ Your account is pending approval.");
+      } else {
+        toast.success("✅ Login successful");
+      }
+
+      navigate(next, { replace: true });
+    } catch (err) {
+      const message =
+        err?.response?.data?.message || err?.message || "❌ Login failed.";
+      const isWarning =
+        message.toLowerCase().includes("pending") ||
+        message.toLowerCase().includes("under review");
+      (isWarning ? toast.warn : toast.error)(message);
+      setError(message);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const isWarning =
+    error.toLowerCase().includes("pending") ||
+    error.toLowerCase().includes("under review");
+
+  return (
+    <div
+      className="min-h-screen bg-gradient-to-br from-purple-100 to-purple-200 flex items-center justify-center px-6 md:px-20 lg:px-36"
+      data-test-id="login-page"
+    >
+      <div className="flex flex-col md:flex-row w-full max-w-6xl shadow-2xl rounded-3xl overflow-hidden bg-white">
+        {/* Left Side Image */}
+        <div className="md:w-1/2 hidden md:block">
+          <img
+            src="/loginpage_.png"
+            alt="Visual"
+            className="h-full w-full object-cover"
+          />
+        </div>
+
+        {/* Right Side Form */}
+        <div className="w-full md:w-1/2 flex flex-col justify-center px-8 sm:px-12 md:px-16 lg:px-20 py-12">
+          <div className="flex justify-center mb-4">
+            <img src="/logo_5.svg" alt="xByteChat Logo" className="h-10" />
+          </div>
+
+          <h2 className="text-2xl font-bold text-center text-purple-800 mb-6">
+            Welcome to <span className="text-purple-900">xByteChat</span>
+          </h2>
+
+          {error && (
+            <div
+              className={`p-3 rounded-lg mb-4 text-sm text-center font-medium shadow ${
+                isWarning
+                  ? "bg-yellow-100 text-yellow-800"
+                  : "bg-red-100 text-red-700"
+              }`}
+              role="alert"
+              aria-live="polite"
+              data-test-id="auth-error"
+            >
+              {error}
+            </div>
+          )}
+
+          <form
+            onSubmit={handleSubmit}
+            className="space-y-5"
+            data-test-id="login-form"
+            aria-busy={loading ? "true" : "false"}
+          >
+            <div>
+              <label className="text-sm font-semibold text-gray-700">
+                Email
+              </label>
+              <input
+                type="email"
+                className="mt-1 w-full p-2 px-4 border border-gray-300 rounded-lg shadow-sm focus:outline-none focus:ring-2 focus:ring-purple-500 transition"
+                placeholder="you@example.com"
+                value={email}
+                onChange={e => setEmail(e.target.value)}
+                required
+                autoComplete="username email"
+                name="email"
+                data-test-id="login-email"
+              />
+            </div>
+
+            <div>
+              <label className="text-sm font-semibold text-gray-700">
+                Password
+              </label>
+              <div className="relative">
+                <input
+                  type={showPassword ? "text" : "password"}
+                  className="mt-1 w-full p-2 px-4 pr-10 border border-gray-300 rounded-lg shadow-sm focus:outline-none focus:ring-2 focus:ring-purple-500 transition"
+                  placeholder="••••••••"
+                  value={password}
+                  onChange={e => setPassword(e.target.value)}
+                  required
+                  autoComplete="current-password"
+                  name="password"
+                  data-test-id="login-password"
+                />
+                <span
+                  className="absolute right-3 top-3 cursor-pointer text-gray-400"
+                  onClick={() => setShowPassword(prev => !prev)}
+                  data-test-id="toggle-password-visibility"
+                  aria-label={showPassword ? "Hide password" : "Show password"}
+                  role="button"
+                >
+                  {showPassword ? "🙈" : "👁️"}
+                </span>
+              </div>
+            </div>
+
+            <button
+              type="submit"
+              disabled={loading}
+              className="w-full bg-purple-600 hover:bg-purple-700 text-white py-2 rounded-lg font-medium transition disabled:opacity-60"
+              data-test-id="login-submit"
+            >
+              {loading ? "🔐 Logging in..." : "Login"}
+            </button>
+          </form>
+
+          <div className="text-center mt-5 text-sm text-gray-600">
+            Don’t have an account?{" "}
+            <Link
+              to="/signup"
+              className="text-purple-600 hover:underline font-medium"
+              data-test-id="signup-link"
+            >
+              Create business profile
+            </Link>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+};
+
+export default Login;
+
+// // src/pages/auth/Login.jsx
+// import React, { useState } from "react";
+// import { useNavigate, Link } from "react-router-dom";
+// import { toast } from "react-toastify";
+// import { login } from "./services/authService";
+// import { useAuth } from "./context/pld_AuthContext";
+
+// const Login = () => {
+//   const navigate = useNavigate();
+//   const { refreshAuthContext } = useAuth();
+
+//   const [email, setEmail] = useState("");
+//   const [password, setPassword] = useState("");
+//   const [error, setError] = useState("");
+//   const [loading, setLoading] = useState(false);
+//   const [showPassword, setShowPassword] = useState(false);
+
+//   const handleSubmit = async e => {
+//     e.preventDefault();
+//     setError("");
+//     setLoading(true);
+
+//     try {
+//       await login(email, password);
+//       await refreshAuthContext();
+//       // 🔁 Bust cached auth state across tabs/sessions
+//       try {
+//         localStorage.setItem("xb_session_stamp", String(Date.now()));
+//       } catch {}
+//       // Optional: clear any UI state that shouldn’t leak between users
+//       try {
+//         localStorage.removeItem("messaging-pinned");
+//         localStorage.removeItem("messaging-archived");
+//         localStorage.removeItem("messaging-order");
+//       } catch {}
+
+//       toast.success("✅ Login successful");
+
+//       // 🔒 Always land on /app (no previous user’s deep route)
+//       navigate("/app", { replace: true });
+//     } catch (err) {
+//       const message =
+//         err?.response?.data?.message || err?.message || "❌ Login failed.";
+//       const isWarning =
+//         message.toLowerCase().includes("pending") ||
+//         message.toLowerCase().includes("under review");
+
+//       (isWarning ? toast.warn : toast.error)(message);
+//       setError(message);
+//     } finally {
+//       setLoading(false);
+//     }
+//   };
+
+//   const isWarning =
+//     error.toLowerCase().includes("pending") ||
+//     error.toLowerCase().includes("under review");
+
+//   return (
+//     <div
+//       className="min-h-screen bg-gradient-to-br from-purple-100 to-purple-200 flex items-center justify-center px-6 md:px-20 lg:px-36"
+//       data-test-id="login-page"
+//     >
+//       <div className="flex flex-col md:flex-row w-full max-w-6xl shadow-2xl rounded-3xl overflow-hidden bg-white">
+//         {/* Left Side Image */}
+//         <div className="md:w-1/2 hidden md:block">
+//           <img
+//             src="/loginpage_.png"
+//             alt="Visual"
+//             className="h-full w-full object-cover"
+//           />
+//         </div>
+
+//         {/* Right Side Form */}
+//         <div className="w-full md:w-1/2 flex flex-col justify-center px-8 sm:px-12 md:px-16 lg:px-20 py-12">
+//           <div className="flex justify-center mb-4">
+//             <img src="/logo_5.svg" alt="xByteChat Logo" className="h-10" />
+//           </div>
+
+//           <h2 className="text-2xl font-bold text-center text-purple-800 mb-6">
+//             Welcome to <span className="text-purple-900">xByteChat</span>
+//           </h2>
+
+//           {error && (
+//             <div
+//               className={`p-3 rounded-lg mb-4 text-sm text-center font-medium shadow ${
+//                 isWarning
+//                   ? "bg-yellow-100 text-yellow-800"
+//                   : "bg-red-100 text-red-700"
+//               }`}
+//               role="alert"
+//               aria-live="polite"
+//               data-test-id="auth-error"
+//             >
+//               {error}
+//             </div>
+//           )}
+
+//           <form
+//             onSubmit={handleSubmit}
+//             className="space-y-5"
+//             data-test-id="login-form"
+//             aria-busy={loading ? "true" : "false"}
+//           >
+//             <div>
+//               <label className="text-sm font-semibold text-gray-700">
+//                 Email
+//               </label>
+//               <input
+//                 type="email"
+//                 className="mt-1 w-full p-2 px-4 border border-gray-300 rounded-lg shadow-sm focus:outline-none focus:ring-2 focus:ring-purple-500 transition"
+//                 placeholder="you@example.com"
+//                 value={email}
+//                 onChange={e => setEmail(e.target.value)}
+//                 required
+//                 autoComplete="username email"
+//                 name="email"
+//                 data-test-id="login-email"
+//               />
+//             </div>
+
+//             <div>
+//               <label className="text-sm font-semibold text-gray-700">
+//                 Password
+//               </label>
+//               <div className="relative">
+//                 <input
+//                   type={showPassword ? "text" : "password"}
+//                   className="mt-1 w-full p-2 px-4 pr-10 border border-gray-300 rounded-lg shadow-sm focus:outline-none focus:ring-2 focus:ring-purple-500 transition"
+//                   placeholder="••••••••"
+//                   value={password}
+//                   onChange={e => setPassword(e.target.value)}
+//                   required
+//                   autoComplete="current-password"
+//                   name="password"
+//                   data-test-id="login-password"
+//                 />
+//                 <span
+//                   className="absolute right-3 top-3 cursor-pointer text-gray-400"
+//                   onClick={() => setShowPassword(prev => !prev)}
+//                   data-test-id="toggle-password-visibility"
+//                   aria-label={showPassword ? "Hide password" : "Show password"}
+//                   role="button"
+//                 >
+//                   {showPassword ? "🙈" : "👁️"}
+//                 </span>
+//               </div>
+//             </div>
+
+//             <button
+//               type="submit"
+//               disabled={loading}
+//               className="w-full bg-purple-600 hover:bg-purple-700 text-white py-2 rounded-lg font-medium transition disabled:opacity-60"
+//               data-test-id="login-submit"
+//             >
+//               {loading ? "🔐 Logging in..." : "Login"}
+//             </button>
+//           </form>
+
+//           <div className="text-center mt-5 text-sm text-gray-600">
+//             Don’t have an account?{" "}
+//             <Link
+//               to="/signup"
+//               className="text-purple-600 hover:underline font-medium"
+//               data-test-id="signup-link"
+//             >
+//               Create business profile
+//             </Link>
+//           </div>
+//         </div>
+//       </div>
+//     </div>
+//   );
+// };
+
+// export default Login;
+ 
+ 
+====================================================== 
+FILE: D:\xbytechat\xbytechat-ui\src\pages\auth\PendingApproval.jsx 
+====================================================== 
+ 
+// src/pages/auth/PendingApproval.jsx
+import React, { useEffect } from "react";
+import { useNavigate } from "react-router-dom";
+import { Clock } from "lucide-react";
+import { toast } from "react-toastify";
+
+export default function PendingApproval() {
+  const navigate = useNavigate();
+
+  useEffect(() => {
+    const hasSeen = sessionStorage.getItem("seen-pending-toast");
+    if (!hasSeen) {
+      toast.info(
+        "⏳ Your business is still under review. Please wait for admin approval."
+      );
+      sessionStorage.setItem("seen-pending-toast", "true");
+    }
+  }, []);
+
+  return (
+    <div className="min-h-screen flex items-center justify-center bg-purple-50 px-4">
+      <div className="bg-white max-w-md w-full p-8 rounded-2xl shadow-xl text-center">
+        <div className="bg-purple-100 text-purple-700 inline-block p-4 rounded-full mb-4">
+          <Clock size={40} />
+        </div>
+        <h2 className="text-2xl font-bold text-purple-800 mb-2">
+          Business Approval Pending
+        </h2>
+        <p className="text-sm text-gray-700 mb-4">
+          Your account has been created successfully, but your business profile
+          is under review. You will be notified once it is approved.
+        </p>
+        <button
+          onClick={() => navigate("/login")}
+          className="mt-4 bg-purple-600 text-white px-5 py-2 rounded-lg hover:bg-purple-700 transition"
+        >
+          🔙 Back to Login
+        </button>
+      </div>
+    </div>
+  );
+}
+ 
+ 
+====================================================== 
+FILE: D:\xbytechat\xbytechat-ui\src\pages\auth\context\AuthContextReadyForrefactor.jsx 
+====================================================== 
+ 
+// src/context/AuthContext.jsx
+import React, {
+  createContext,
+  useContext,
+  useEffect,
+  useState,
+  useCallback,
+} from "react";
+import { getAuthFromToken } from "../../utils/authUtils";
+import axiosClient from "../../api/axiosClient";
+import { toast } from "react-toastify";
+
+const AuthContext = createContext(null);
+
+export const AuthProvider = ({ children }) => {
+  const [auth, setAuth] = useState(() => {
+    const initial = getAuthFromToken();
+    return {
+      ...initial,
+      permissions: new Set(initial?.permissions || []), // always Set
+    };
+  });
+
+  // 🔄 Refresh permissions from backend
+  const fetchPermissions = useCallback(async () => {
+    try {
+      const { data } = await axiosClient.get("/plan/me/permissions");
+      if (data?.permissions?.length) {
+        setAuth(prev => ({
+          ...prev,
+          permissions: new Set(data.permissions),
+        }));
+      }
+    } catch (err) {
+      console.warn("⚠️ Could not fetch permissions", err);
+      toast.error("Failed to load permissions");
+    }
+  }, []);
+
+  // Load once at mount
+  useEffect(() => {
+    fetchPermissions();
+  }, [fetchPermissions]);
+
+  const hasPermission = useCallback(
+    perm => auth.permissions?.has("*") || auth.permissions?.has(perm),
+    [auth.permissions]
+  );
+
+  const value = {
+    auth,
+    setAuth,
+    hasPermission,
+    hasAllAccess: auth.permissions?.has("*"),
+    refreshPermissions: fetchPermissions,
+  };
+
+  return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;
+};
+
+export const useAuth = () => {
+  const ctx = useContext(AuthContext);
+  if (!ctx) throw new Error("useAuth must be used within AuthProvider");
+  return ctx;
+};
+ 
+ 
+====================================================== 
+FILE: D:\xbytechat\xbytechat-ui\src\pages\auth\context\pld_AuthContext.jsx 
+====================================================== 
+ 
+// src/app/providers/AuthProvider.jsx
+import {
+  createContext,
+  useContext,
+  useState,
+  useEffect,
+  useMemo,
+  useCallback,
+} from "react";
+import axiosClient from "../../../api/axiosClient";
+// import { getAuthFromToken } from "../../utils/jwt";
+import { getAuthFromToken } from "../../../utils/jwt";
+
+const AuthContext = createContext(null);
+
+export function AuthProvider({ children }) {
+  const [role, setRole] = useState("");
+  const [planId, setPlanId] = useState(null);
+  const [businessId, setBusinessId] = useState(null);
+  const [userName, setUserName] = useState("User");
+  const [isLoading, setIsLoading] = useState(true);
+
+  // authoritative permissions from server (array of strings) or ["*"]
+  const [perms, setPerms] = useState([]);
+
+  const hasAllAccess = useMemo(
+    () => perms.includes("*") || role === "superadmin",
+    [perms, role]
+  );
+  const isAuthenticated = useMemo(() => !!role, [role]);
+
+  const clearAuthData = () => {
+    setRole("");
+    setPlanId(null);
+    setBusinessId(null);
+    setUserName("User");
+    setPerms([]);
+  };
+
+  const can = useCallback(
+    code => (hasAllAccess ? true : perms.includes(code)),
+    [perms, hasAllAccess]
+  );
+
+  const loadSession = useCallback(async () => {
+    setIsLoading(true);
+    try {
+      const auth = getAuthFromToken(); // reads JWT; enforces exp
+      if (!auth.isAuth) {
+        clearAuthData();
+        return;
+      }
+      setRole(auth.role);
+      setPlanId(auth.planId || null);
+      setBusinessId(auth.businessId || null);
+      setUserName(auth.name || "User");
+
+      // pull permissions from server (authoritative)
+      const { data } = await axiosClient.get("/plan/me/permissions"); // returns string[] or ["*"]
+      setPerms(Array.isArray(data) ? data : []);
+    } catch (err) {
+      console.warn("[Auth] loadSession failed:", err?.message);
+      clearAuthData();
+    } finally {
+      setIsLoading(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    loadSession();
+  }, [loadSession]);
+
+  const refreshAuthContext = async () => {
+    await loadSession();
+  };
+
+  const value = {
+    role,
+    planId,
+    businessId,
+    userName,
+    isAuthenticated,
+    isLoading,
+    hasAllAccess,
+    can,
+    refreshAuthContext,
+    clearAuthData,
+  };
+
+  return (
+    <AuthContext.Provider value={value}>
+      {isLoading ? (
+        <div className="min-h-screen flex items-center justify-center text-purple-700 font-semibold text-lg">
+          🔐 Authenticating...
+        </div>
+      ) : (
+        children
+      )}
+    </AuthContext.Provider>
+  );
+}
+
+export function useAuth() {
+  const ctx = useContext(AuthContext);
+  if (!ctx) throw new Error("useAuth must be used inside an AuthProvider");
+  return ctx;
+}
+
+// // 📄 src/pages/auth/context/AuthContext.jsx
+// import {
+//   createContext,
+//   useContext,
+//   useState,
+//   useEffect,
+//   useMemo,
+//   useCallback,
+// } from "react";
+// import axiosClient, { TOKEN_KEY } from "../../../api/axiosClient";
+// import { getAuthFromToken } from "../../../utils/jwt";
+
+// const AuthContext = createContext(null);
+
+// export function AuthProvider({ children }) {
+//   const [role, setRole] = useState("");
+//   const [planId, setPlanId] = useState(null);
+//   const [businessId, setBusinessId] = useState(null);
+//   const [userName, setUserName] = useState("User");
+//   const [isLoading, setIsLoading] = useState(true);
+
+//   // permissions map for UX (server is still the source of truth)
+//   const [availableFeatures, setAvailableFeatures] = useState({}); // { "messages.send": true }
+//   const [hasAllAccess, setHasAllAccess] = useState(false); // wildcard for admins
+
+//   const isAuthenticated = useMemo(() => !!role, [role]);
+
+//   const clearAuthData = () => {
+//     // remove token to avoid stuck loops with a bad token
+//     try {
+//       localStorage.removeItem(TOKEN_KEY);
+//     } catch {}
+//     setRole("");
+//     setPlanId(null);
+//     setBusinessId(null);
+//     setUserName("User");
+//     setAvailableFeatures({});
+//     setHasAllAccess(false);
+//   };
+
+//   const loadSession = useCallback(async () => {
+//     setIsLoading(true);
+//     try {
+//       // 1) Read from JWT (just enough to know who we are)
+//       const auth = getAuthFromToken();
+//       if (!auth.isAuth) {
+//         clearAuthData();
+//         return;
+//       }
+
+//       setRole(auth.role);
+//       setPlanId(auth.planId ?? null); // <-- expects 'plan_id' in JWT
+//       setBusinessId(auth.businessId ?? null);
+//       setUserName(auth.name || "User");
+
+//       // 2) Admin bypass (wildcard, no FE enumeration)
+//       if (auth.role === "superadmin" || auth.role === "admin") {
+//         setHasAllAccess(true);
+//         return;
+//       }
+
+//       // 3) Fetch authoritative permissions from backend
+//       const { data } = await axiosClient.get("/plan/me/permissions");
+//       // expected: { planId: "...", permissions: ["messages.send", ...] } or ["*"]
+//       const codes = Array.isArray(data?.permissions) ? data.permissions : [];
+
+//       if (codes.includes("*")) {
+//         setHasAllAccess(true);
+//         return;
+//       }
+
+//       const map = {};
+//       codes.forEach(code => {
+//         map[code] = true;
+//       });
+//       setAvailableFeatures(map);
+//     } catch (err) {
+//       console.warn("❌ [Auth] loadSession failed:", err?.message);
+//       clearAuthData();
+//     } finally {
+//       setIsLoading(false);
+//     }
+//   }, []);
+
+//   useEffect(() => {
+//     loadSession();
+//   }, [loadSession]);
+
+//   const refreshAuthContext = async () => {
+//     await loadSession();
+//   };
+
+//   // single helper for UI checks; backend still enforces on endpoints
+//   const can = useCallback(
+//     code => {
+//       return hasAllAccess || !!availableFeatures[code];
+//     },
+//     [hasAllAccess, availableFeatures]
+//   );
+
+//   return (
+//     <AuthContext.Provider
+//       value={{
+//         role,
+//         planId,
+//         businessId,
+//         userName,
+//         availableFeatures,
+//         hasAllAccess,
+//         can,
+//         isAuthenticated,
+//         isLoading,
+//         refreshAuthContext,
+//         clearAuthData,
+//         // setRole kept for dev tools if you want
+//         setRole,
+//       }}
+//     >
+//       {isLoading ? (
+//         <div className="min-h-screen flex items-center justify-center text-purple-700 font-semibold text-lg">
+//           🔐 Authenticating...
+//         </div>
+//       ) : (
+//         children
+//       )}
+//     </AuthContext.Provider>
+//   );
+// }
+
+// export function useAuth() {
+//   const ctx = useContext(AuthContext);
+//   if (!ctx) throw new Error("useAuth must be used inside an AuthProvider");
+//   return ctx;
+// }
+
+// Below code we have comented for harden teh security
+// // 📄 src/pages/auth/context/AuthContext.jsx
+// import {
+//   createContext,
+//   useContext,
+//   useState,
+//   useEffect,
+//   useMemo,
+//   useCallback,
+// } from "react";
+// import axiosClient from "../../../api/axiosClient";
+
+// import { getAuthFromToken } from "../../../utils/jwt";
+// import { FEATURE_KEYS as featureKeys } from "../../../components/FeatureAccess/featureKeyConfig";
+
+// const AuthContext = createContext(null);
+
+// export function AuthProvider({ children }) {
+//   const [role, setRole] = useState("");
+//   const [plan, setPlan] = useState("");
+//   const [businessId, setBusinessId] = useState(null);
+//   const [userName, setUserName] = useState("User");
+//   const [isLoading, setIsLoading] = useState(true);
+//   const [availableFeatures, setAvailableFeatures] = useState({});
+
+//   const isAuthenticated = useMemo(() => !!role, [role]);
+
+//   const clearAuthData = () => {
+//     setRole("");
+//     setPlan("");
+//     setBusinessId(null);
+//     setAvailableFeatures({});
+//   };
+
+//   const loadSession = useCallback(async () => {
+//     setIsLoading(true);
+//     try {
+//       // 1) Read from JWT (source of truth on client)
+//       const auth = getAuthFromToken();
+//       if (!auth.isAuth) {
+//         clearAuthData();
+//         return;
+//       }
+//       setRole(auth.role);
+//       setPlan(auth.plan);
+//       setBusinessId(auth.businessId);
+//       setUserName(auth.name);
+
+//       // 2) Superadmin: grant all
+//       if (auth.role === "superadmin") {
+//         const all = {};
+//         Object.values(featureKeys).forEach(k => (all[k] = true));
+//         setAvailableFeatures(all);
+//         return;
+//       }
+
+//       // 3) Fetch feature map from API (Bearer via axiosClient)
+//       const { data } = await axiosClient.get("/feature-access/me");
+//       const map = {};
+//       (data || []).forEach(f => {
+//         const allowed = f.isOverridden ?? f.isAvailableInPlan;
+//         map[f.featureCode] = allowed;
+//       });
+//       setAvailableFeatures(map);
+//     } catch (err) {
+//       console.warn("❌ [Auth] loadSession failed:", err?.message);
+//       clearAuthData();
+//     } finally {
+//       setIsLoading(false);
+//     }
+//   }, []);
+
+//   useEffect(() => {
+//     loadSession();
+//   }, [loadSession]);
+
+//   const refreshAuthContext = async () => {
+//     await loadSession();
+//   };
+
+//   return (
+//     <AuthContext.Provider
+//       value={{
+//         role,
+//         plan,
+//         businessId,
+//         userName,
+//         availableFeatures,
+//         isAuthenticated,
+//         isLoading,
+//         refreshAuthContext,
+//         clearAuthData,
+//         setRole, // dev helpers
+//       }}
+//     >
+//       {isLoading ? (
+//         <div className="min-h-screen flex items-center justify-center text-purple-700 font-semibold text-lg">
+//           🔐 Authenticating...
+//         </div>
+//       ) : (
+//         children
+//       )}
+//     </AuthContext.Provider>
+//   );
+// }
+
+// export function useAuth() {
+//   const ctx = useContext(AuthContext);
+//   if (!ctx) throw new Error("useAuth must be used inside an AuthProvider");
+//   return ctx;
+// }
+
+// import {
+//   createContext,
+//   useContext,
+//   useState,
+//   useEffect,
+//   useMemo,
+//   useCallback,
+// } from "react";
+// import axios from "axios";
+// import { FEATURE_KEYS as featureKeys } from "../../../components/FeatureAccess/featureKeyConfig";
+
+// const AuthContext = createContext(null);
+
+// export function AuthProvider({ children }) {
+//   const [role, setRole] = useState("");
+//   const [businessId, setBusinessId] = useState(null);
+//   const [isLoading, setIsLoading] = useState(true);
+//   const [availableFeatures, setAvailableFeatures] = useState({});
+
+//   const isAuthenticated = useMemo(() => !!role, [role]);
+
+//   const clearAuthData = () => {
+//     setRole("");
+//     setBusinessId(null);
+//     setAvailableFeatures({});
+//     console.log("🧹 [Auth] Auth data cleared.");
+//   };
+
+//   // ✅ Wrap loadSession in useCallback to avoid linter warning
+//   const loadSession = useCallback(async () => {
+//     setIsLoading(true);
+//     try {
+//       const { data: session } = await axios.get("/api/auth/session", {
+//         withCredentials: true,
+//       });
+
+//       const { role: rawRole, businessId: sessionBusinessId } = session;
+
+//       const safeRole = (rawRole || "").toLowerCase();
+//       setRole(safeRole);
+//       setBusinessId(sessionBusinessId || null);
+
+//       if (safeRole === "superadmin") {
+//         // 🟢 Enable all features for superadmin
+//         const all = {};
+//         Object.values(featureKeys).forEach(key => {
+//           all[key] = true;
+//         });
+//         setAvailableFeatures(all);
+//       } else {
+//         // ✅ Business user: Fetch plan + override aware feature list
+//         const { data } = await axios.get("/api/feature-access/me", {
+//           withCredentials: true,
+//         });
+
+//         const map = {};
+//         (data || []).forEach(f => {
+//           const isAllowed = f.isOverridden ?? f.isAvailableInPlan;
+//           map[f.featureCode] = isAllowed;
+//         });
+//         console.log("✅ [Available Features]", map);
+//         setAvailableFeatures(map);
+//       }
+//     } catch (error) {
+//       console.warn("❌ [Auth] Session failed:", error?.message);
+//       clearAuthData();
+//     } finally {
+//       setIsLoading(false);
+//     }
+//   }, []); // 👈 NO dependencies needed here
+
+//   useEffect(() => {
+//     loadSession();
+//   }, [loadSession]); // 👈 Dependency fixed
+
+//   const refreshAuthContext = async () => {
+//     console.log("🔁 [Auth] Manual refresh triggered...");
+//     await loadSession();
+//   };
+
+//   useEffect(() => {
+//     console.log("🔔 [Auth State]", {
+//       role,
+//       businessId,
+//       isAuthenticated,
+//       availableFeatures,
+//     });
+//   }, [role, businessId, isAuthenticated, availableFeatures]);
+
+//   return (
+//     <AuthContext.Provider
+//       value={{
+//         role,
+//         businessId,
+//         availableFeatures,
+//         isAuthenticated,
+//         isLoading,
+//         refreshAuthContext,
+//         clearAuthData,
+//         setRole,
+//       }}
+//     >
+//       {isLoading ? (
+//         <div className="min-h-screen flex items-center justify-center text-purple-700 font-semibold text-lg">
+//           🔐 Authenticating...
+//         </div>
+//       ) : (
+//         children
+//       )}
+//     </AuthContext.Provider>
+//   );
+// }
+
+// export function useAuth() {
+//   const context = useContext(AuthContext);
+//   if (!context) {
+//     throw new Error("useAuth must be used inside an AuthProvider");
+//   }
+//   return context;
+// }
+
+// import { createContext, useContext, useState, useEffect, useMemo } from "react";
+// import axios from "axios";
+// import { FEATURE_KEYS as featureKeys } from "../../../components/FeatureAccess/featureKeyConfig";
+
+// const AuthContext = createContext(null);
+
+// export function AuthProvider({ children }) {
+//   const [role, setRole] = useState("");
+//   const [businessId, setBusinessId] = useState(null);
+//   const [isLoading, setIsLoading] = useState(true);
+//   const [availableFeatures, setAvailableFeatures] = useState({});
+
+//   const isAuthenticated = useMemo(() => !!role, [role]);
+
+//   const clearAuthData = () => {
+//     setRole("");
+//     setBusinessId(null);
+//     setAvailableFeatures({});
+//     console.log("🧹 [Auth] Auth data cleared.");
+//   };
+
+//   const loadSession = async () => {
+//     setIsLoading(true);
+//     try {
+//       const { data: session } = await axios.get("/api/auth/session", {
+//         withCredentials: true,
+//       });
+
+//       const { role: rawRole, businessId: sessionBusinessId } = session;
+
+//       const safeRole = (rawRole || "").toLowerCase();
+//       setRole(safeRole);
+//       setBusinessId(sessionBusinessId || null);
+
+//       if (safeRole === "superadmin") {
+//         // 🟢 Enable all features for superadmin
+//         const all = {};
+//         // featureKeys.forEach(key => (all[key] = true));
+//         Object.values(featureKeys).forEach(key => {
+//           all[key] = true;
+//         });
+
+//         setAvailableFeatures(all);
+//       } else {
+//         // ✅ Business user: Fetch plan + override aware feature list
+//         const { data } = await axios.get("/api/feature-access/me", {
+//           withCredentials: true,
+//         });
+
+//         const map = {};
+//         (data || []).forEach(f => {
+//           const isAllowed = f.isOverridden ?? f.isAvailableInPlan;
+//           map[f.featureCode] = isAllowed;
+//         });
+//         console.log("✅ [Available Features]", map);
+//         setAvailableFeatures(map);
+//       }
+//     } catch (error) {
+//       console.warn("❌ [Auth] Session failed:", error?.message);
+//       clearAuthData();
+//     } finally {
+//       setIsLoading(false);
+//     }
+//   };
+
+//   useEffect(() => {
+//     loadSession();
+//   }, []);
+
+//   const refreshAuthContext = async () => {
+//     console.log("🔁 [Auth] Manual refresh triggered...");
+//     await loadSession();
+//   };
+
+//   useEffect(() => {
+//     console.log("🔔 [Auth State]", {
+//       role,
+//       businessId,
+//       isAuthenticated,
+//       availableFeatures,
+//     });
+//   }, [role, businessId, isAuthenticated, availableFeatures]);
+
+//   return (
+//     <AuthContext.Provider
+//       value={{
+//         role,
+//         businessId,
+//         availableFeatures,
+//         isAuthenticated,
+//         isLoading,
+//         refreshAuthContext,
+//         clearAuthData,
+//         setRole,
+//       }}
+//     >
+//       {isLoading ? (
+//         <div className="min-h-screen flex items-center justify-center text-purple-700 font-semibold text-lg">
+//           🔐 Authenticating...
+//         </div>
+//       ) : (
+//         children
+//       )}
+//     </AuthContext.Provider>
+//   );
+// }
+
+// export function useAuth() {
+//   const context = useContext(AuthContext);
+//   if (!context) {
+//     throw new Error("useAuth must be used inside an AuthProvider");
+//   }
+//   return context;
+// }
+ 
+ 
+====================================================== 
+FILE: D:\xbytechat\xbytechat-ui\src\pages\auth\hooks\RequireFeature.jsx 
+====================================================== 
+ 
+import React from "react";
+import { useFeatureAccess } from "./useFeatureAccess";
+import { usePlan } from "./usePlan";
+
+// 🔐 Wrapper to conditionally show children if feature allowed
+export default function RequireFeature({ name, children }) {
+  const isFeatureAllowed = useFeatureAccess(name);
+  const { hasPlan } = usePlan();
+
+  // 🧠 Runtime logic:
+  // 1. If featureAccess table allows → ✅ show
+  // 2. Else → check plan fallback (optional)
+  const isAllowed =
+    isFeatureAllowed ||
+    (name === "CRM" && hasPlan("Basic")) ||
+    (name === "Campaigns" && hasPlan("Smart")) ||
+    (name === "Catalog" && hasPlan("Advanced"));
+
+  if (!isAllowed) return null;
+
+  return <>{children}</>;
+}
+ 
+ 
+====================================================== 
+FILE: D:\xbytechat\xbytechat-ui\src\pages\auth\hooks\useAllFeatureAccess.js 
+====================================================== 
+ 
+import { useEffect, useState } from "react";
+import axiosClient from "../../../api/axiosClient";
+
+const featureMapCache = {};
+
+export function useAllFeatureAccess(businessId) {
+  const [featureMap, setFeatureMap] = useState({});
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    if (!businessId) return;
+
+    if (featureMapCache[businessId]) {
+      setFeatureMap(featureMapCache[businessId]);
+      setLoading(false);
+      return;
+    }
+
+    const fetchAll = async () => {
+      try {
+        const response = await axiosClient.get(
+          `/api/feature-access/business/${businessId}`
+        );
+        const accessList = response.data || [];
+
+        const map = {};
+        for (const item of accessList) {
+          map[item.featureName] = item.isEnabled;
+        }
+
+        featureMapCache[businessId] = map;
+        setFeatureMap(map);
+      } catch (err) {
+        console.error("Failed to fetch feature access list:", err);
+        setFeatureMap({});
+      } finally {
+        setLoading(false);
+      }
+    };
+
+    fetchAll();
+  }, [businessId]);
+
+  return { featureMap, loading };
+}
+ 
+ 
+====================================================== 
+FILE: D:\xbytechat\xbytechat-ui\src\pages\auth\hooks\useBusinessId.js 
+====================================================== 
+ 
+// 📄 src/auth/hooks/useBusinessId.js
+import { useAuth } from "../../pages/auth/context/AuthContext";
+export function useBusinessId() {
+  const { businessId } = useAuth();
+  return businessId || "";
+}
+
+// // src/auth/hooks/useBusinessId.js
+
+// import { jwtDecode } from "jwt-decode";
+
+// export function useBusinessId() {
+//   const token = localStorage.getItem("xbytechat-token");
+
+//   if (!token) return "";
+
+//   try {
+//     const decoded = jwtDecode(token);
+//     return decoded.businessId || "";
+//   } catch (err) {
+//     console.error("❌ Failed to decode businessId from token:", err);
+//     return "";
+//   }
+// }
+ 
+ 
+====================================================== 
+FILE: D:\xbytechat\xbytechat-ui\src\pages\auth\hooks\useCompanyName.js 
+====================================================== 
+ 
+// src/auth/hooks/useCompanyName.js
+
+import { jwtDecode } from "jwt-decode";
+
+export function useCompanyName() {
+  const token = localStorage.getItem("xbytechat-token");
+
+  if (!token) return "";
+
+  try {
+    const decoded = jwtDecode(token);
+    return decoded.companyName || "";
+  } catch (err) {
+    console.error("❌ Failed to decode companyName from token:", err);
+    return "";
+  }
+}
+ 
+ 
+====================================================== 
+FILE: D:\xbytechat\xbytechat-ui\src\pages\auth\hooks\useFeatureAccess.js 
+====================================================== 
+ 
+import { useEffect, useState } from "react";
+import axiosClient from "../../../api/axiosClient"; // ✅ relative path confirmed
+
+const featureAccessCache = {};
+
+export function useFeatureAccess(businessId, featureName) {
+  const [isAllowed, setIsAllowed] = useState(false);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    if (!businessId || !featureName) return;
+
+    const cacheKey = `${businessId}-${featureName}`;
+
+    if (featureAccessCache[cacheKey] !== undefined) {
+      setIsAllowed(featureAccessCache[cacheKey]);
+      setLoading(false);
+      return;
+    }
+
+    const fetchAccess = async () => {
+      try {
+        const response = await axiosClient.get(
+          `/api/feature-access/business/${businessId}`
+        );
+        const accessList = response.data || [];
+
+        const feature = accessList.find(f => f.featureName === featureName);
+        const allowed = feature ? feature.isEnabled : false;
+
+        featureAccessCache[cacheKey] = allowed;
+        setIsAllowed(allowed);
+      } catch (err) {
+        console.error("❌ Feature access check failed:", err);
+        setIsAllowed(false);
+      } finally {
+        setLoading(false);
+      }
+    };
+
+    fetchAccess();
+  }, [businessId, featureName]);
+
+  return { isAllowed, loading };
+}
+ 
+ 
+====================================================== 
+FILE: D:\xbytechat\xbytechat-ui\src\pages\auth\hooks\useFeatureStatus.js 
+====================================================== 
+ 
+// 📄 src/pages/auth/hooks/useFeatureStatus.js
+import { useAuth } from "../context/AuthContext";
+
+export default function useFeatureStatus(featureKey) {
+  const { featureMatrix } = useAuth();
+  const feature = featureMatrix?.[featureKey];
+
+  if (feature === undefined)
+    return { status: "unknown", label: "Unknown", color: "gray" };
+
+  if (feature.isOverridden !== null) {
+    return {
+      status: "overridden",
+      label: feature.isOverridden
+        ? "Overridden: Enabled"
+        : "Overridden: Disabled",
+      color: feature.isOverridden ? "yellow" : "gray",
+    };
+  }
+
+  return feature.isAvailableInPlan
+    ? { status: "enabled", label: "Plan: Enabled", color: "green" }
+    : { status: "disabled", label: "Plan: Not Available", color: "red" };
+}
+ 
+ 
+====================================================== 
+FILE: D:\xbytechat\xbytechat-ui\src\pages\auth\hooks\usePlan.js 
+====================================================== 
+ 
+// src/pages/auth/hooks/usePlan.js
+import { useEffect, useState } from "react";
+import axiosClient from "../../../api/axiosClient";
+import { useAuth } from "../context/pld_AuthContext";
+
+export function usePlan() {
+  const { role } = useAuth();
+  const [plan, setPlan] = useState(""); // normalized lowercase tier (from DB name)
+  const [planObj, setPlanObj] = useState(null); // full DB object { id, name, code, description, ... }
+  const [planId, setPlanId] = useState(null);
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState("");
+
+  useEffect(() => {
+    let cancel = false;
+
+    async function load() {
+      setLoading(true);
+      setError("");
+      setPlan("");
+      setPlanObj(null);
+      setPlanId(null);
+
+      try {
+        const res = await axiosClient.get("/plan/me/permissions");
+        const data = res?.data || {};
+        const p = data.plan || null;
+
+        if (!cancel) {
+          setPlanId(data.planId ?? null);
+
+          if (p) {
+            const tier = (p.name || "").trim().toLowerCase(); // ← directly from DB
+            setPlan(tier);
+            setPlanObj(p); // keep full object from backend
+          }
+        }
+      } catch (e) {
+        if (!cancel) {
+          const msg =
+            e?.response?.data?.message || e?.message || "Failed to load plan";
+          setError(msg);
+        }
+      } finally {
+        if (!cancel) setLoading(false);
+      }
+    }
+
+    load();
+    return () => {
+      cancel = true;
+    };
+  }, []);
+
+  return { plan, planObj, planId, loading, error, role };
+}
+
+// // src/pages/auth/hooks/usePlan.js
+// import { useEffect, useMemo, useState } from "react";
+// import axiosClient from "../../../api/axiosClient";
+// import { useAuth } from "../context/pld_AuthContext";
+
+// // normalize backend plan name/code to: trial | basic | smart | advanced
+// function normalizePlanTier(plan) {
+//   if (!plan) return "";
+//   const raw = (plan.tier || plan.code || plan.name || "")
+//     .toString()
+//     .trim()
+//     .toLowerCase();
+
+//   if (["trial", "free"].includes(raw)) return "trial";
+//   if (["basic", "starter"].includes(raw)) return "basic";
+//   if (["smart", "pro", "standard"].includes(raw)) return "smart";
+//   if (["advanced", "enterprise"].includes(raw)) return "advanced";
+
+//   if (raw.includes("trial")) return "trial";
+//   if (raw.includes("basic") || raw.includes("start")) return "basic";
+//   if (raw.includes("smart") || raw.includes("pro")) return "smart";
+//   if (raw.includes("advanced") || raw.includes("enter")) return "advanced";
+//   return raw; // unknown → pass through
+// }
+
+// export function usePlan() {
+//   const { role } = useAuth(); // useful if you want to special-case admins
+//   const [plan, setPlan] = useState(""); // normalized tier
+//   const [planObj, setPlanObj] = useState(null); // { id, name, code, description }
+//   const [planId, setPlanId] = useState(null); // GUID from response
+//   const [loading, setLoading] = useState(false);
+//   const [error, setError] = useState("");
+
+//   useEffect(() => {
+//     let cancel = false;
+
+//     async function load() {
+//       setLoading(true);
+//       setError("");
+//       setPlan("");
+//       setPlanObj(null);
+//       setPlanId(null);
+
+//       try {
+//         const res = await axiosClient.get("/plan/me/permissions"); // baseURL already has /api
+//         const data = res?.data || {};
+//         const p = data.plan || null;
+
+//         if (!cancel) {
+//           setPlanId(data.planId ?? null);
+
+//           if (p) {
+//             const tier = normalizePlanTier(p);
+//             setPlan(tier);
+//             setPlanObj({
+//               id: p.id,
+//               name: p.name,
+//               code: p.code,
+//               description: p.description || "",
+//               tier,
+//             });
+//           } else {
+//             // strict: no fallback; surface missing plan
+//             setPlan("");
+//             setPlanObj(null);
+//           }
+//         }
+//       } catch (e) {
+//         if (!cancel) {
+//           const msg =
+//             e?.response?.data?.message || e?.message || "Failed to load plan";
+//           setError(msg);
+//           // Keep plan empty to enforce “no fallback” policy
+//         }
+//       } finally {
+//         if (!cancel) setLoading(false);
+//       }
+//     }
+
+//     load();
+//     return () => {
+//       cancel = true;
+//     };
+//   }, []);
+
+//   const hasPlan = useMemo(() => {
+//     const order = ["trial", "basic", "smart", "advanced"];
+//     return required => {
+//       if (!plan) return false;
+//       const a = order.indexOf(plan.toLowerCase());
+//       const b = order.indexOf((required || "").toLowerCase());
+//       if (a === -1 || b === -1) return false;
+//       return a >= b;
+//     };
+//   }, [plan]);
+
+//   return { plan, planObj, planId, loading, error, hasPlan, role };
+// }
+
+// // src/pages/auth/hooks/usePlan.js
+// import { useEffect, useMemo, useState } from "react";
+// import { useAuth } from "../context/pld_AuthContext";
+// import { getPlanById } from "../services/planService";
+
+// export function usePlan() {
+//   const { planId, role } = useAuth(); // role is handy if you want to bypass admins
+//   const [plan, setPlan] = useState(""); // normalized tier: trial|basic|smart|advanced|unknown
+//   const [planObj, setPlanObj] = useState(null); // full plan object from API
+//   const [loading, setLoading] = useState(false);
+//   const [error, setError] = useState("");
+
+//   useEffect(() => {
+//     let cancel = false;
+
+//     async function run() {
+//       setError("");
+//       setPlan("");
+//       setPlanObj(null);
+
+//       // If no planId (e.g., superadmin/partner/reseller), nothing to fetch
+//       if (!planId) return;
+
+//       setLoading(true);
+//       try {
+//         const p = await getPlanById(planId);
+//         if (!cancel) {
+//           setPlan(p?.tier || ""); // normalized tier
+//           setPlanObj(p || null); // keep full plan data if you need description/name
+//         }
+//       } catch (e) {
+//         if (!cancel) {
+//           setError(e?.message || "Failed to fetch plan");
+//         }
+//       } finally {
+//         if (!cancel) setLoading(false);
+//       }
+//     }
+
+//     run();
+//     return () => {
+//       cancel = true;
+//     };
+//   }, [planId]);
+
+//   const hasPlan = useMemo(() => {
+//     const order = ["trial", "basic", "smart", "advanced"];
+//     return required => {
+//       if (!plan) return false;
+//       const a = order.indexOf(plan.toLowerCase());
+//       const b = order.indexOf((required || "").toLowerCase());
+//       if (a === -1 || b === -1) return false;
+//       return a >= b;
+//     };
+//   }, [plan]);
+
+//   return { plan, planObj, planId, loading, error, hasPlan, role };
+// }
+
+// // 📄 src/pages/auth/hooks/usePlan.js
+// import { useAuth } from "../context/AuthContext";
+
+// export function usePlan() {
+//   const { plan } = useAuth();
+
+//   const hasPlan = requiredPlan => {
+//     if (!plan) return false;
+
+//     const tiers = ["trial", "basic", "smart", "advanced"];
+//     const userTier = tiers.indexOf(plan.toLowerCase());
+//     const requiredTier = tiers.indexOf(requiredPlan.toLowerCase());
+
+//     return userTier >= requiredTier;
+//   };
+
+//   return { plan, hasPlan };
+// }
+ 
+ 
+====================================================== 
+FILE: D:\xbytechat\xbytechat-ui\src\pages\auth\hooks\useRole.js 
+====================================================== 
+ 
+// 📄 src/auth/hooks/useRole.js
+import { useAuth } from "../../pages/auth/context/AuthContext";
+export function useRole() {
+  const { role } = useAuth();
+  return role || "";
+}
+
+// // src/auth/hooks/useRole.js
+
+// import { jwtDecode } from "jwt-decode";
+
+// export function useRole() {
+//   const token = localStorage.getItem("xbytechat-token");
+
+//   if (!token) return "";
+
+//   try {
+//     const decoded = jwtDecode(token);
+//     return decoded.role || "";
+//   } catch (err) {
+//     console.error("❌ Failed to decode role from token:", err);
+//     return "";
+//   }
+// }
+ 
+ 
+====================================================== 
+FILE: D:\xbytechat\xbytechat-ui\src\pages\auth\services\authService.js 
+====================================================== 
+ 
+// 📄 src/pages/auth/services/authService.js
+import axiosClient, { TOKEN_KEY } from "../../../api/axiosClient";
+import { getAuthFromToken } from "../../../utils/jwt";
+
+function toArray(csv) {
+  return String(csv || "")
+    .split(",")
+    .map(s => s.trim())
+    .filter(Boolean);
+}
+
+export const login = async (email, password) => {
+  try {
+    const { data } = await axiosClient.post("/auth/login", { email, password });
+
+    const token = data?.token;
+    if (!token) {
+      const msg = data?.message || "❌ Login failed.";
+      const e = new Error(msg);
+      e.isCustom = true;
+      throw e;
+    }
+
+    // Store token
+    localStorage.setItem(TOKEN_KEY, token);
+
+    // Decode & normalize auth info from JWT
+    const auth = getAuthFromToken(); // { isAuth, role, name, planId, businessId, hasAllAccess, permissionsCsv, featuresCsv, ... }
+
+    // 🔧 Back-compat keys used in a few places
+    if (auth?.role) localStorage.setItem("role", auth.role); // used by some admin pages
+    localStorage.setItem(
+      "xbytechat-auth-data",
+      JSON.stringify({
+        role: auth?.role ?? "business",
+        name: auth?.name ?? "",
+        planId: auth?.planId ?? null,
+        businessId: auth?.businessId ?? null,
+        hasAllAccess: !!auth?.hasAllAccess,
+        // convert CSV in token → arrays for hooks like usePermission()
+        permissions: toArray(auth?.permissionsCsv),
+        features: toArray(auth?.featuresCsv),
+        status: auth?.status ?? "active",
+      })
+    );
+
+    // Hand back detail so the UI can decide where to route
+    return {
+      success: true,
+      role: auth?.role ?? "business",
+      status: (auth?.status || "active").toLowerCase(), // e.g. "profilepending"
+      hasAllAccess: !!auth?.hasAllAccess,
+      planId: auth?.planId ?? null,
+      businessId: auth?.businessId ?? null,
+    };
+  } catch (err) {
+    const msg =
+      err?.response?.data?.message || err?.message || "❌ Login failed.";
+    const e = new Error(msg);
+    e.code = err?.response?.status;
+    e.isCustom = true;
+    throw e;
+  }
+};
+
+export const logout = () => {
+  try {
+    localStorage.removeItem(TOKEN_KEY);
+    localStorage.removeItem("role");
+    localStorage.removeItem("xbytechat-auth-data");
+  } catch {
+    /* no-op */
+  }
+};
+
+// // 📄 src/pages/auth/services/authService.js
+// import axiosClient, { TOKEN_KEY } from "../../../api/axiosClient";
+
+// export const login = async (email, password) => {
+//   const { data } = await axiosClient.post("/auth/login", { email, password });
+//   // Backend returns: { token: "<jwt>" }
+//   if (!data?.token) {
+//     const msg = data?.message || "❌ Login failed.";
+//     const err = new Error(msg);
+//     err.isCustom = true;
+//     throw err;
+//   }
+//   localStorage.setItem(TOKEN_KEY, data.token);
+//   return { success: true };
+// };
+
+// export const logout = () => {
+//   localStorage.removeItem(TOKEN_KEY);
+// };
+ 
+ 
+====================================================== 
+FILE: D:\xbytechat\xbytechat-ui\src\pages\auth\services\planService.js 
+====================================================== 
+ 
+// // src/pages/auth/services/planService.js
+// import axiosClient from "../../../api/axiosClient";
+
+// // simple in-memory cache for plan lookups
+// const planCache = new Map();
+
+// /**
+//  * Normalize a backend plan name/code to one of: trial | basic | smart | advanced
+//  * Tweak this mapping to match your DB values exactly.
+//  */
+// function normalizePlanTier(plan) {
+//   if (!plan) return "";
+//   const raw = (plan.tier || plan.code || plan.name || "")
+//     .toString()
+//     .trim()
+//     .toLowerCase();
+
+//   if (["trial", "free"].includes(raw)) return "trial";
+//   if (["basic", "starter"].includes(raw)) return "basic";
+//   if (["smart", "pro", "standard"].includes(raw)) return "smart";
+//   if (["advanced", "enterprise"].includes(raw)) return "advanced";
+//   // fallback: try partial matches
+//   if (raw.includes("trial")) return "trial";
+//   if (raw.includes("basic") || raw.includes("start")) return "basic";
+//   if (raw.includes("smart") || raw.includes("pro")) return "smart";
+//   if (raw.includes("advanced") || raw.includes("enter")) return "advanced";
+//   return raw; // unknown tier, return as-is
+// }
+
+// /**
+//  * Fetch plan by id (cached). Expects API to return something like:
+//  * { id, name, code, tier, description }
+//  */
+// export async function getPlanById(planId) {
+//   if (!planId) return null;
+//   if (planCache.has(planId)) return planCache.get(planId);
+
+//   // Adjust endpoint to your backend route if different:
+//   const { data } = await axiosClient.get(`/plans/${planId}`);
+//   const plan = data?.data || data || null;
+
+//   const normalized = plan
+//     ? {
+//         id: plan.id || planId,
+//         name: plan.name || "",
+//         code: plan.code || "",
+//         tier: normalizePlanTier(plan),
+//         description: plan.description || "",
+//       }
+//     : null;
+
+//   planCache.set(planId, normalized);
+//   return normalized;
+// }
+
+// src/pages/auth/services/planService.js
+import axiosClient from "../../../api/axiosClient";
+
+const planCache = new Map();
+
+function normalizePlanTier(plan) {
+  if (!plan) return "";
+  const raw = (plan.tier || plan.code || plan.name || "")
+    .toString()
+    .trim()
+    .toLowerCase();
+
+  if (["trial", "free"].includes(raw)) return "trial";
+  if (["basic", "starter"].includes(raw)) return "basic";
+  if (["smart", "pro", "standard"].includes(raw)) return "smart";
+  if (["advanced", "enterprise"].includes(raw)) return "advanced";
+  if (raw.includes("trial")) return "trial";
+  if (raw.includes("basic") || raw.includes("start")) return "basic";
+  if (raw.includes("smart") || raw.includes("pro")) return "smart";
+  if (raw.includes("advanced") || raw.includes("enter")) return "advanced";
+  return raw;
+}
+
+function pickPayload(data) {
+  // handle {data:{...}}, {success, data:{...}}, or raw object
+  if (!data) return null;
+  if (data.data && typeof data.data === "object") return data.data;
+  return data;
+}
+
+export async function getPlanById(planId) {
+  if (!planId) return null;
+
+  const id = encodeURIComponent(String(planId).trim());
+  if (planCache.has(id)) return planCache.get(id);
+
+  let payload = null;
+  let lastErr;
+
+  // Try RESTful style: /plans/{id}
+  try {
+    const res1 = await axiosClient.get(`/plans/${id}`);
+    payload = pickPayload(res1.data);
+  } catch (e) {
+    lastErr = e;
+  }
+
+  // Fallback to query style: /plans?id={id}
+  if (!payload) {
+    try {
+      const res2 = await axiosClient.get(`/plans`, { params: { id } });
+      payload = pickPayload(res2.data);
+    } catch (e) {
+      lastErr = e;
+    }
+  }
+
+  if (!payload) {
+    // bubble up a useful message
+    const status = lastErr?.response?.status;
+    const msg =
+      lastErr?.response?.data?.message ||
+      lastErr?.message ||
+      `Failed to fetch plan (${status || "no response"})`;
+    throw new Error(msg);
+  }
+
+  const normalized = {
+    id: payload.id || planId,
+    name: payload.name || "",
+    code: payload.code || "",
+    tier: normalizePlanTier(payload),
+    description: payload.description || "",
+  };
+
+  planCache.set(id, normalized);
+  return normalized;
+}
+ 
+ 
+====================================================== 
+FILE: D:\xbytechat\xbytechat-ui\src\pages\auth\__tests__\access.test.ts 
+====================================================== 
+ 
+// src/auth/__tests__/access.test.ts
+import { describe, it, expect } from "@jest/globals";
+import { canUseFeature } from "../access";
+
+describe("canUseFeature", () => {
+  it("returns true when no requirements provided", () => {
+    expect(
+      canUseFeature({
+        role: "business",
+        availableFeatures: { Messaging: true },
+        required: undefined,
+      })
+    ).toBe(true);
+  });
+
+  it("superadmin bypasses everything", () => {
+    expect(
+      canUseFeature({
+        role: "superadmin",
+        availableFeatures: {},
+        required: { role: ["admin"], featureKeys: ["PlanManager"] },
+      })
+    ).toBe(true);
+  });
+
+  it("role-gated allow (role included)", () => {
+    expect(
+      canUseFeature({
+        role: "admin",
+        availableFeatures: {},
+        required: { role: ["admin", "superadmin"] },
+      })
+    ).toBe(true);
+  });
+
+  it("role-gated deny (role not included)", () => {
+    expect(
+      canUseFeature({
+        role: "business",
+        availableFeatures: { PlanManager: true },
+        required: { role: ["admin"] },
+      })
+    ).toBe(false);
+  });
+
+  it("feature-gated allow (single feature present)", () => {
+    expect(
+      canUseFeature({
+        role: "admin",
+        availableFeatures: { BulkMessaging: true },
+        required: { featureKeys: ["BulkMessaging"] },
+      })
+    ).toBe(true);
+  });
+
+  it("feature-gated deny when missing", () => {
+    expect(
+      canUseFeature({
+        role: "admin",
+        availableFeatures: {},
+        required: { featureKeys: ["BulkMessaging"] },
+      })
+    ).toBe(false);
+  });
+
+  it("multi-feature gating requires all features", () => {
+    expect(
+      canUseFeature({
+        role: "admin",
+        availableFeatures: { A: true, B: false },
+        required: { featureKeys: ["A", "B"] },
+      })
+    ).toBe(false);
+
+    expect(
+      canUseFeature({
+        role: "admin",
+        availableFeatures: { A: true, B: true },
+        required: { featureKeys: ["A", "B"] },
+      })
+    ).toBe(true);
+  });
+});
+ 
+ 

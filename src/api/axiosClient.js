@@ -1,15 +1,12 @@
-// 📄 src/utils/axiosClient.js
+// src/utils/axiosClient.js
 import axios from "axios";
 import { toast } from "react-toastify";
 
-// Tip: In .env.development.local, set:
-// REACT_APP_API_BASE_URL=https://your-api.azurewebsites.net
-// (with or without /api — we'll normalize)
-
+// Base URL (override via REACT_APP_API_BASE_URL)
 const rawBase =
   (process.env.REACT_APP_API_BASE_URL &&
     process.env.REACT_APP_API_BASE_URL.trim()) ||
-  "https://busiorbit-api-hcbyhrg2gafqe6e7.centralindia-01.azurewebsites.net";
+  "https://your-api.example.com";
 
 // Ensure it ends with /api (but not //api)
 function normalizeBaseUrl(url) {
@@ -19,30 +16,37 @@ function normalizeBaseUrl(url) {
 
 const apiBaseUrl = normalizeBaseUrl(rawBase);
 
-// Token storage key (single source of truth)
+// Single source of truth for token key
 export const TOKEN_KEY = "xbyte_token";
 
-// Use Bearer tokens (no cookies)
 const axiosClient = axios.create({
   baseURL: apiBaseUrl,
   headers: {
     "Content-Type": "application/json",
     Accept: "application/json",
   },
-  withCredentials: false,
+  withCredentials: false, // we use Bearer tokens, not cookies
 });
 
-// 🔐 Attach Authorization header if token exists
+// Attach Authorization header if token exists
 axiosClient.interceptors.request.use(config => {
   const token = localStorage.getItem(TOKEN_KEY);
   if (token) config.headers.Authorization = `Bearer ${token}`;
   return config;
 });
 
-// Avoid duplicate toasts during a single navigation/error
+// Helpers to avoid noisy toasts/redirect loops on auth screens
+const AUTH_PAGES = [
+  "/login",
+  "/signup",
+  "/pending-approval",
+  "/profile-completion",
+];
+const isOnAuthPage = () =>
+  AUTH_PAGES.some(p => window.location.pathname.startsWith(p));
+
 let showingAuthToast = false;
 
-// ❗Error handling
 axiosClient.interceptors.response.use(
   res => res,
   error => {
@@ -52,33 +56,42 @@ axiosClient.interceptors.response.use(
       error?.message ||
       "❌ Something went wrong.";
 
+    const cfg = error?.config || {};
+    const suppress401 =
+      cfg.__silent401 ||
+      cfg.headers?.["x-suppress-401-toast"] ||
+      isOnAuthPage();
+    const suppress403 =
+      cfg.__silent403 ||
+      cfg.headers?.["x-suppress-403-toast"] ||
+      isOnAuthPage();
+
     if (status === 401) {
-      // Not authenticated or token expired
+      // Token invalid/expired or not authorized (yet)
       localStorage.removeItem(TOKEN_KEY);
 
-      const redirectTo = encodeURIComponent(
-        window.location.pathname + window.location.search + window.location.hash
-      );
-
-      if (!showingAuthToast) {
+      if (!suppress401 && !showingAuthToast) {
         toast.error("⏰ Session expired. Please log in again.");
         showingAuthToast = true;
-        // reset the flag soon to allow future messages
         setTimeout(() => (showingAuthToast = false), 2000);
       }
 
-      // Avoid redirect loops if we're already on /login
-      const alreadyOnLogin = window.location.pathname.startsWith("/login");
-      if (!alreadyOnLogin) {
+      // Only redirect if we aren't already on an auth page and we didn't opt out
+      if (!suppress401 && !isOnAuthPage()) {
+        const redirectTo = encodeURIComponent(
+          window.location.pathname +
+            window.location.search +
+            window.location.hash
+        );
         window.location.href = `/login?redirectTo=${redirectTo}`;
       }
 
-      // Always reject so callers can handle if needed
       return Promise.reject(error);
     }
 
     if (status === 403) {
-      if (!showingAuthToast) {
+      // Forbidden (e.g., business pending/under review). Don't scream on auth pages.
+      if (!suppress403 && !showingAuthToast) {
         toast.error("⛔ Access denied.");
         showingAuthToast = true;
         setTimeout(() => (showingAuthToast = false), 2000);
@@ -86,7 +99,7 @@ axiosClient.interceptors.response.use(
       return Promise.reject(error);
     }
 
-    // Generic case
+    // Generic error
     if (!showingAuthToast) {
       toast.error(msg);
       showingAuthToast = true;
@@ -94,7 +107,6 @@ axiosClient.interceptors.response.use(
     }
 
     if (process.env.NODE_ENV !== "production") {
-      // Helpful during dev/E2E
       // eslint-disable-next-line no-console
       console.error("[Axios Error]", error);
     }
@@ -109,6 +121,118 @@ if (process.env.NODE_ENV !== "production") {
 }
 
 export default axiosClient;
+
+// // 📄 src/utils/axiosClient.js
+// import axios from "axios";
+// import { toast } from "react-toastify";
+
+// // Tip: In .env.development.local, set:
+// // REACT_APP_API_BASE_URL=https://your-api.azurewebsites.net
+// // (with or without /api — we'll normalize)
+
+// const rawBase =
+//   (process.env.REACT_APP_API_BASE_URL &&
+//     process.env.REACT_APP_API_BASE_URL.trim()) ||
+//   "https://busiorbit-api-hcbyhrg2gafqe6e7.centralindia-01.azurewebsites.net";
+
+// // Ensure it ends with /api (but not //api)
+// function normalizeBaseUrl(url) {
+//   const u = url.replace(/\/+$/, ""); // strip trailing slashes
+//   return u.endsWith("/api") ? u : `${u}/api`;
+// }
+
+// const apiBaseUrl = normalizeBaseUrl(rawBase);
+
+// // Token storage key (single source of truth)
+// export const TOKEN_KEY = "xbyte_token";
+
+// // Use Bearer tokens (no cookies)
+// const axiosClient = axios.create({
+//   baseURL: apiBaseUrl,
+//   headers: {
+//     "Content-Type": "application/json",
+//     Accept: "application/json",
+//   },
+//   withCredentials: false,
+// });
+
+// // 🔐 Attach Authorization header if token exists
+// axiosClient.interceptors.request.use(config => {
+//   const token = localStorage.getItem(TOKEN_KEY);
+//   if (token) config.headers.Authorization = `Bearer ${token}`;
+//   return config;
+// });
+
+// // Avoid duplicate toasts during a single navigation/error
+// let showingAuthToast = false;
+
+// // ❗Error handling
+// axiosClient.interceptors.response.use(
+//   res => res,
+//   error => {
+//     const status = error?.response?.status;
+//     const msg =
+//       error?.response?.data?.message ||
+//       error?.message ||
+//       "❌ Something went wrong.";
+
+//     if (status === 401) {
+//       // Not authenticated or token expired
+//       localStorage.removeItem(TOKEN_KEY);
+
+//       const redirectTo = encodeURIComponent(
+//         window.location.pathname + window.location.search + window.location.hash
+//       );
+
+//       if (!showingAuthToast) {
+//         toast.error("⏰ Session expired. Please log in again.");
+//         showingAuthToast = true;
+//         // reset the flag soon to allow future messages
+//         setTimeout(() => (showingAuthToast = false), 2000);
+//       }
+
+//       // Avoid redirect loops if we're already on /login
+//       const alreadyOnLogin = window.location.pathname.startsWith("/login");
+//       if (!alreadyOnLogin) {
+//         window.location.href = `/login?redirectTo=${redirectTo}`;
+//       }
+
+//       // Always reject so callers can handle if needed
+//       return Promise.reject(error);
+//     }
+
+//     if (status === 403) {
+//       if (!showingAuthToast) {
+//         toast.error("⛔ Access denied.");
+//         showingAuthToast = true;
+//         setTimeout(() => (showingAuthToast = false), 2000);
+//       }
+//       return Promise.reject(error);
+//     }
+
+//     // Generic case
+//     if (!showingAuthToast) {
+//       toast.error(msg);
+//       showingAuthToast = true;
+//       setTimeout(() => (showingAuthToast = false), 1500);
+//     }
+
+//     if (process.env.NODE_ENV !== "production") {
+//       // Helpful during dev/E2E
+//       // eslint-disable-next-line no-console
+//       console.error("[Axios Error]", error);
+//     }
+
+//     return Promise.reject(error);
+//   }
+// );
+
+// if (process.env.NODE_ENV !== "production") {
+//   // eslint-disable-next-line no-console
+//   console.log("✅ Axios BASE URL:", axiosClient.defaults.baseURL);
+// }
+
+// export default axiosClient;
 
 // // 📄 src/utils/axiosClient.js
 // import axios from "axios";

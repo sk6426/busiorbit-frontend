@@ -7,9 +7,10 @@ import {
   useCallback,
 } from "react";
 import { getAuthFromToken } from "../../utils/jwt";
-import axiosClient from "../../api/axiosClient"; // ✅ use your axios client
+import axiosClient, * as ax from "../../api/axiosClient"; // ✅ use your axios client
 
-const ACCESS_TOKEN_KEY = "accessToken";
+// Use the same storage key as axiosClient (falls back to 'xbyte_token')
+const TOKEN_KEY = ax.TOKEN_KEY || "xbyte_token";
 
 const AuthContext = createContext(null);
 
@@ -21,7 +22,7 @@ export function AuthProvider({ children }) {
   const [isLoading, setIsLoading] = useState(true);
 
   // permissions & features visible to the app
-  const [permissions, setPermissions] = useState(new Set()); // <-- union of JWT + plan
+  const [permissions, setPermissions] = useState(new Set()); // union of JWT + plan
   const [availableFeatures, setAvailableFeatures] = useState({}); // { Settings:true, Messaging:true, ... }
   const [hasAllAccess, setHasAllAccess] = useState(false);
 
@@ -39,7 +40,7 @@ export function AuthProvider({ children }) {
 
   const logout = useCallback(() => {
     try {
-      localStorage.removeItem(ACCESS_TOKEN_KEY);
+      localStorage.removeItem(TOKEN_KEY); // ✅ align with axiosClient token key
     } catch {}
     clearAuthData();
     window.location.replace("/login");
@@ -53,7 +54,7 @@ export function AuthProvider({ children }) {
   const loadSession = useCallback(async () => {
     setIsLoading(true);
     try {
-      const auth = getAuthFromToken();
+      const auth = getAuthFromToken(); // reads JWT; enforces exp
 
       if (!auth?.isAuth) {
         clearAuthData();
@@ -80,25 +81,31 @@ export function AuthProvider({ children }) {
         .filter(Boolean);
       const featsMap = Object.fromEntries(feats.map(f => [f, true]));
 
-      // 3) if not superadmin and we have a plan, merge plan permissions from API
+      // 3) merge plan permissions from API (unless superadmin)
       let merged = new Set(jwtPerms);
       const isSuper = (auth.role || "").toLowerCase() === "superadmin";
       if (!isSuper) {
         try {
-          const res = await axiosClient.get("/plan/me/permissions");
-          // shape: { planId, plan: {id,code,name,...} , permissions: [ "code", ... ] }
+          // ⛳️ IMPORTANT: silence 401/403 toasts/redirect during background fetch
+          const res = await axiosClient.get("/plan/me/permissions", {
+            __silent401: true,
+            __silent403: true,
+            headers: {
+              "x-suppress-401-toast": "1",
+              "x-suppress-403-toast": "1",
+            },
+          });
+
           const planCodes = Array.isArray(res?.data?.permissions)
             ? res.data.permissions
             : [];
           for (const c of planCodes) merged.add(c);
 
-          // (optional) you can also flip on some feature flags based on plan if you want
-          // e.g. if planCodes include "settings.whatsapp.view", expose Settings section too
+          // (optional) enable UI sections based on plan codes
           if (planCodes.includes("settings.whatsapp.view")) {
             featsMap.Settings = true;
           }
         } catch (e) {
-          // non-fatal; just log
           if (process.env.NODE_ENV !== "production") {
             // eslint-disable-next-line no-console
             console.warn(
@@ -111,11 +118,11 @@ export function AuthProvider({ children }) {
 
       setPermissions(merged);
       setAvailableFeatures(featsMap);
-
       setHasAllAccess(
         auth.hasAllAccess === true || auth.hasAllAccess === "true" || isSuper
       );
     } catch (err) {
+      // eslint-disable-next-line no-console
       console.warn("[Auth] loadSession failed:", err?.message || err);
       clearAuthData();
     } finally {
@@ -127,6 +134,7 @@ export function AuthProvider({ children }) {
     loadSession();
   }, [loadSession]);
 
+  // react to cross-tab login/logout
   useEffect(() => {
     const onStorage = e => {
       if (e.key === "xb_session_stamp") {
@@ -181,6 +189,190 @@ export function useAuth() {
   if (!ctx) throw new Error("useAuth must be used inside an AuthProvider");
   return ctx;
 }
+
+// import {
+//   createContext,
+//   useContext,
+//   useState,
+//   useEffect,
+//   useMemo,
+//   useCallback,
+// } from "react";
+// import { getAuthFromToken } from "../../utils/jwt";
+// import axiosClient from "../../api/axiosClient"; // ✅ use your axios client
+
+// const ACCESS_TOKEN_KEY = "accessToken";
+
+// const AuthContext = createContext(null);
+
+// export function AuthProvider({ children }) {
+//   const [role, setRole] = useState("");
+//   const [planId, setPlanId] = useState(null);
+//   const [businessId, setBusinessId] = useState(null);
+//   const [userName, setUserName] = useState("User");
+//   const [isLoading, setIsLoading] = useState(true);
+
+//   // permissions & features visible to the app
+//   const [permissions, setPermissions] = useState(new Set()); // <-- union of JWT + plan
+//   const [availableFeatures, setAvailableFeatures] = useState({}); // { Settings:true, Messaging:true, ... }
+//   const [hasAllAccess, setHasAllAccess] = useState(false);
+
+//   const isAuthenticated = useMemo(() => !!role, [role]);
+
+//   const clearAuthData = useCallback(() => {
+//     setRole("");
+//     setPlanId(null);
+//     setBusinessId(null);
+//     setUserName("User");
+//     setPermissions(new Set());
+//     setAvailableFeatures({});
+//     setHasAllAccess(false);
+//   }, []);
+
+//   const logout = useCallback(() => {
+//     try {
+//       localStorage.removeItem(ACCESS_TOKEN_KEY);
+//     } catch {}
+//     clearAuthData();
+//     window.location.replace("/login");
+//   }, [clearAuthData]);
+
+//   const can = useCallback(
+//     code => (hasAllAccess ? true : permissions.has(code)),
+//     [permissions, hasAllAccess]
+//   );
+
+//   const loadSession = useCallback(async () => {
+//     setIsLoading(true);
+//     try {
+//       const auth = getAuthFromToken();
+
+//       if (!auth?.isAuth) {
+//         clearAuthData();
+//         return;
+//       }
+
+//       setRole(auth.role || "");
+//       setPlanId(auth.planId || null);
+//       setBusinessId(auth.businessId || null);
+//       setUserName(auth.name || "User");
+
+//       // 1) permissions from JWT
+//       const jwtPerms = new Set(
+//         (auth.permissionsCsv || "")
+//           .split(",")
+//           .map(s => s.trim())
+//           .filter(Boolean)
+//       );
+
+//       // 2) features from JWT (flags for UI buckets like “Settings”, “Messaging”, etc.)
+//       const feats = (auth.featuresCsv || "")
+//         .split(",")
+//         .map(s => s.trim())
+//         .filter(Boolean);
+//       const featsMap = Object.fromEntries(feats.map(f => [f, true]));
+
+//       // 3) if not superadmin and we have a plan, merge plan permissions from API
+//       let merged = new Set(jwtPerms);
+//       const isSuper = (auth.role || "").toLowerCase() === "superadmin";
+//       if (!isSuper) {
+//         try {
+//           const res = await axiosClient.get("/plan/me/permissions");
+//           // shape: { planId, plan: {id,code,name,...} , permissions: [ "code", ... ] }
+//           const planCodes = Array.isArray(res?.data?.permissions)
+//             ? res.data.permissions
+//             : [];
+//           for (const c of planCodes) merged.add(c);
+
+//           // (optional) you can also flip on some feature flags based on plan if you want
+//           // e.g. if planCodes include "settings.whatsapp.view", expose Settings section too
+//           if (planCodes.includes("settings.whatsapp.view")) {
+//             featsMap.Settings = true;
+//           }
+//         } catch (e) {
+//           // non-fatal; just log
+//           if (process.env.NODE_ENV !== "production") {
+//             // eslint-disable-next-line no-console
+//             console.warn(
+//               "[AuthProvider] /plan/me/permissions failed:",
+//               e?.message || e
+//             );
+//           }
+//         }
+//       }
+
+//       setPermissions(merged);
+//       setAvailableFeatures(featsMap);
+
+//       setHasAllAccess(
+//         auth.hasAllAccess === true || auth.hasAllAccess === "true" || isSuper
+//       );
+//     } catch (err) {
+//       console.warn("[Auth] loadSession failed:", err?.message || err);
+//       clearAuthData();
+//     } finally {
+//       setIsLoading(false);
+//     }
+//   }, [clearAuthData]);
+
+//   useEffect(() => {
+//     loadSession();
+//   }, [loadSession]);
+
+//   useEffect(() => {
+//     const onStorage = e => {
+//       if (e.key === "xb_session_stamp") {
+//         loadSession();
+//       }
+//     };
+//     window.addEventListener("storage", onStorage);
+//     return () => window.removeEventListener("storage", onStorage);
+//   }, [loadSession]);
+
+//   const refreshAuthContext = async () => {
+//     await loadSession();
+//   };
+
+//   const value = {
+//     // identity
+//     role,
+//     planId,
+//     businessId,
+//     userName,
+
+//     // session state
+//     isAuthenticated,
+//     isLoading,
+
+//     // access control
+//     hasAllAccess,
+//     can,
+//     availableFeatures,
+
+//     // helpers
+//     refreshAuthContext,
+//     clearAuthData,
+//     logout,
+//   };
+
+//   return (
+//     <AuthContext.Provider value={value}>
+//       {isLoading ? (
+//         <div className="min-h-screen flex items-center justify-center text-purple-700 font-semibold text-lg">
+//           🔐 Authenticating...
+//         </div>
+//       ) : (
+//         children
+//       )}
+//     </AuthContext.Provider>
+//   );
+// }
+
+// export function useAuth() {
+//   const ctx = useContext(AuthContext);
+//   if (!ctx) throw new Error("useAuth must be used inside an AuthProvider");
+//   return ctx;
+// }
 
 // // src/app/providers/AuthProvider.jsx
 // import {
