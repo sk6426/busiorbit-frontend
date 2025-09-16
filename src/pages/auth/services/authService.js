@@ -72,23 +72,3 @@ export const logout = () => {
     /* no-op */
   }
 };
-
-// // 📄 src/pages/auth/services/authService.js
-// import axiosClient, { TOKEN_KEY } from "../../../api/axiosClient";
-
-// export const login = async (email, password) => {
-//   const { data } = await axiosClient.post("/auth/login", { email, password });
-//   // Backend returns: { token: "<jwt>" }
-//   if (!data?.token) {
-//     const msg = data?.message || "❌ Login failed.";
-//     const err = new Error(msg);
-//     err.isCustom = true;
-//     throw err;
-//   }
-//   localStorage.setItem(TOKEN_KEY, data.token);
-//   return { success: true };
-// };
-
-// export const logout = () => {
-//   localStorage.removeItem(TOKEN_KEY);
-// };
