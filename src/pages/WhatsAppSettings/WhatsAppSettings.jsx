@@ -3,304 +3,407 @@ import React, { useState, useEffect, useMemo } from "react";
 import axiosClient from "../../api/axiosClient";
 import { toast } from "react-toastify";
 
-// Canonical provider values (MUST match backend)
+// === Canonical providers (MUST match backend exactly) ===
 const PROVIDERS = [
-  { value: "Pinnacle", label: "Pinnacle (Official)" },
-  { value: "Meta_cloud", label: "Meta Cloud API" },
+  { value: "PINNACLE", label: "Pinnacle (Official)" },
+  { value: "META_CLOUD", label: "Meta Cloud API" },
 ];
 
-// Map legacy/lowercase to canonical
+// --- BusinessId helper (unchanged) ---
+const TOKEN_KEY = "xbyte_token";
+const GUID_RE =
+  /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+function getBusinessId() {
+  try {
+    const saved = localStorage.getItem("business_id");
+    if (saved && GUID_RE.test(saved)) return saved;
+
+    const jwt = localStorage.getItem(TOKEN_KEY);
+    if (!jwt) return null;
+    const [, payloadB64] = jwt.split(".");
+    if (!payloadB64) return null;
+    const payload = JSON.parse(
+      atob(payloadB64.replace(/-/g, "+").replace(/_/g, "/"))
+    );
+    const bid =
+      payload?.BusinessId ||
+      payload?.businessId ||
+      payload?.biz ||
+      payload?.bid ||
+      null;
+    return typeof bid === "string" && GUID_RE.test(bid) ? bid : null;
+  } catch {
+    return null;
+  }
+}
+
+// Map any input to UPPERCASE canonical values
 const normalizeProvider = p => {
-  if (!p) return "Pinnacle";
-  const raw = String(p).trim();
-  if (raw === "Pinnacle" || raw === "Meta_cloud") return raw;
-  const lower = raw.toLowerCase();
-  if (["pinnacle", "pinbot", "pinnacle (official)"].includes(lower))
-    return "Pinnacle";
-  if (["meta_cloud", "meta cloud", "meta", "meta-cloud"].includes(lower))
-    return "Meta_cloud";
-  return "Pinnacle";
+  const raw = (p ?? "").toString().trim();
+  if (!raw) return "PINNACLE";
+  const up = raw.toUpperCase();
+  if (up === "PINNACLE") return "PINNACLE";
+  if (
+    up === "META_CLOUD" ||
+    up === "META" ||
+    up === "METACLOUD" ||
+    up === "META-CLOUD"
+  )
+    return "META_CLOUD";
+  return "PINNACLE";
+};
+
+// UI label per provider (still binds to apiKey)
+const secretLabelFor = provider =>
+  normalizeProvider(provider) === "PINNACLE" ? "API Key" : "Token";
+
+// Initial blank form
+const blank = {
+  provider: "PINNACLE",
+  apiUrl: "", // keep string (ApiUrl is NOT NULL on BE)
+  apiKey: "",
+  phoneNumberId: "",
+  wabaId: "",
+  whatsAppBusinessNumber: "",
+  senderDisplayName: "",
+  webhookSecret: "",
+  webhookVerifyToken: "",
+  webhookCallbackUrl: "",
+  isActive: true,
 };
 
 export default function WhatsAppSettings() {
-  const [formData, setFormData] = useState({
-    provider: "Pinnacle",
-    apiUrl: "",
-    apiKey: "",
-    apiToken: "",
-    phoneNumberId: "",
-    wabaId: "",
-    whatsAppBusinessNumber: "",
-    senderDisplayName: "",
-    webhookSecret: "",
-    webhookVerifyToken: "",
-    webhookCallbackUrl: "",
-    isActive: true,
-  });
-
+  const [formData, setFormData] = useState(blank);
   const [loading, setLoading] = useState(false);
+  const [saving, setSaving] = useState(false);
   const [testing, setTesting] = useState(false);
   const [testResult, setTestResult] = useState("");
+  const [senders, setSenders] = useState([]);
 
-  useEffect(() => {
-    (async () => {
-      try {
-        const { data } = await axiosClient.get("/whatsappsettings/me");
-        if (data) {
-          const provider = normalizeProvider(data.provider);
-          // If coming from DB with only ApiKey column populated for Meta_cloud, mirror it into apiToken for UI
-          const apiKeyFromDb = data.apiKey ?? "";
-          const apiTokenFromDb =
-            provider === "Meta_cloud" && !data.apiToken
-              ? apiKeyFromDb
-              : data.apiToken ?? "";
-
-          setFormData(prev => ({
-            ...prev,
-            provider,
-            apiUrl: data.apiUrl || "",
-            apiKey: apiKeyFromDb,
-            apiToken: apiTokenFromDb,
-            phoneNumberId: data.phoneNumberId || "",
-            wabaId: data.wabaId || "",
-            whatsAppBusinessNumber: data.whatsAppBusinessNumber || "",
-            senderDisplayName: data.senderDisplayName || "",
-            webhookSecret: data.webhookSecret || "",
-            webhookVerifyToken: data.webhookVerifyToken || "",
-            webhookCallbackUrl: data.webhookCallbackUrl || "",
-            isActive: data.isActive ?? true,
-          }));
+  const businessId = useMemo(getBusinessId, []);
+  const withBiz = (cfg = {}) =>
+    businessId
+      ? {
+          ...cfg,
+          headers: { ...(cfg.headers || {}), "X-Business-Id": businessId },
         }
-      } catch {
-        toast.info("ℹ️ No WhatsApp settings found. You can create them now.");
-      }
-    })();
-  }, []);
+      : cfg;
 
-  const onChange = e => {
-    const { name, value, type, checked } = e.target;
-    setFormData(f => ({
-      ...f,
-      [name]:
-        name === "provider"
-          ? normalizeProvider(value)
-          : type === "checkbox"
-          ? checked
-          : value,
-    }));
+  // Numbers helpers
+  const listNumbers = async provider => {
+    const p = normalizeProvider(provider);
+    const { data } = await axiosClient.get(
+      `/whatsappsettings/${p}/numbers`,
+      withBiz()
+    );
+    return Array.isArray(data) ? data : [];
   };
 
-  // Validation
-  const validationErrors = useMemo(() => {
-    const f = Object.fromEntries(
-      Object.entries(formData).map(([k, v]) => [
-        k,
-        typeof v === "string" ? v.trim() : v,
-      ])
+  const upsertNumber = async (provider, row) => {
+    const p = normalizeProvider(provider);
+    const payload = {
+      id: row.id || undefined,
+      phoneNumberId: (row.phoneNumberId || "").trim(),
+      whatsAppBusinessNumber: (row.whatsAppBusinessNumber || "").trim(),
+      senderDisplayName: (row.label || row.senderDisplayName || "").trim(),
+      isActive: row.isActive ?? true,
+      isDefault: !!row.isDefault,
+    };
+    const { data } = await axiosClient.post(
+      `/whatsappsettings/${p}/numbers`,
+      payload,
+      withBiz()
     );
-    const errors = [];
+    return data;
+  };
 
-    if (!f.apiUrl) errors.push("API URL is required.");
+  const deleteNumber = async (provider, id) => {
+    const p = normalizeProvider(provider);
+    await axiosClient.delete(`/whatsappsettings/${p}/numbers/${id}`, withBiz());
+  };
 
-    if (f.provider === "Meta_cloud") {
-      if (!f.apiToken) errors.push("Token is required for Meta Cloud.");
-      if (!f.phoneNumberId)
-        errors.push("Phone Number ID is required for Meta Cloud.");
-    }
+  const setDefaultNumber = async (provider, id) => {
+    const p = normalizeProvider(provider);
+    await axiosClient.patch(
+      `/whatsappsettings/${p}/numbers/${id}/default`,
+      null,
+      withBiz()
+    );
+  };
 
-    if (f.provider === "Pinnacle") {
-      if (!f.apiKey) errors.push("API Key is required for Pinnacle.");
-      if (!f.phoneNumberId && !f.wabaId) {
-        errors.push("Provide Phone Number ID or WABA ID for Pinnacle.");
-      }
-      if (!f.whatsAppBusinessNumber) {
-        errors.push("WhatsApp Business Number is required for Pinnacle.");
-      }
-      if (!f.webhookCallbackUrl) {
-        errors.push("Webhook Callback URL is required for Pinnacle.");
-      } else if (!/^https:\/\/.+/i.test(f.webhookCallbackUrl)) {
-        errors.push("Webhook Callback URL must be a valid HTTPS URL.");
-      }
-    }
-
-    // Global rule: At least one credential required (defensive)
-    if (!f.apiKey && !f.apiToken) {
-      errors.push("Either API Key or Token must be provided.");
-    }
-
-    return errors;
-  }, [formData]);
-
-  const handleTestConnection = async () => {
-    if (validationErrors.length) {
-      toast.warn("⚠️ Please fix the form: " + validationErrors[0]);
-      return;
-    }
-    setTesting(true);
+  const fetchNumbers = async provider => {
     try {
-      const provider = normalizeProvider(formData.provider);
-      const payload = {
-        provider,
-        apiUrl: (formData.apiUrl ?? "").trim().replace(/\/+$/, ""),
-        // For testing we can still send both, backend can choose what it uses
-        apiKey: (formData.apiKey ?? "").trim(),
-        apiToken: (formData.apiToken ?? "").trim(),
-        phoneNumberId: (formData.phoneNumberId ?? "").trim(),
-        wabaId: (formData.wabaId ?? "").trim(),
-        whatsAppBusinessNumber: (formData.whatsAppBusinessNumber ?? "").trim(),
-      };
-
-      const { data } = await axiosClient.post(
-        "/whatsappsettings/test-connection",
-        payload
+      const items = await listNumbers(provider);
+      setSenders(
+        items.map(n => ({
+          id: n.id,
+          label: n.senderDisplayName || "",
+          phoneNumberId: n.phoneNumberId || "",
+          whatsAppBusinessNumber: n.whatsAppBusinessNumber || "",
+          isDefault: !!n.isDefault,
+          isActive: n.isActive ?? true,
+        }))
       );
-      setTestResult(data?.message || "✅ Connection successful.");
-      toast.success("✅ Test connection succeeded.");
+    } catch {
+      // ignore
+    }
+  };
+
+  // Derived UI
+  const providerLabel = useMemo(
+    () => secretLabelFor(formData.provider),
+    [formData.provider]
+  );
+
+  // Initial load
+  useEffect(() => {
+    let isMounted = true;
+    (async () => {
+      try {
+        setLoading(true);
+        const res = await axiosClient.get("/whatsappsettings/me", withBiz());
+        if (!isMounted) return;
+        const data = res?.data ?? {};
+
+        const provider = normalizeProvider(data?.provider);
+
+        const secret = data?.apiKey || data?.apiToken || "";
+        setFormData(prev => ({
+          ...prev,
+          provider,
+          apiUrl: data?.apiUrl || "",
+          apiKey: secret,
+          phoneNumberId: data?.phoneNumberId || "",
+          wabaId: data?.wabaId || "",
+          whatsAppBusinessNumber: data?.whatsAppBusinessNumber || "",
+          senderDisplayName: data?.senderDisplayName || "",
+          webhookSecret: data?.webhookSecret || "",
+          webhookVerifyToken: data?.webhookVerifyToken || "",
+          webhookCallbackUrl: data?.webhookCallbackUrl || "",
+          isActive: data?.isActive ?? true,
+        }));
+
+        // seed numbers from legacy fields once
+        const num = (data?.whatsAppBusinessNumber || "").trim();
+        const pni = (data?.phoneNumberId || "").trim();
+        const label = (data?.senderDisplayName || "").trim();
+        setSenders(current => {
+          if (current?.length) return current;
+          if (!num && !pni) return [];
+          return [
+            {
+              label,
+              phoneNumberId: pni,
+              whatsAppBusinessNumber: num,
+              isDefault: true,
+              isActive: true,
+            },
+          ];
+        });
+
+        await fetchNumbers(provider);
+      } catch {
+        toast.info("ℹ️ No WhatsApp settings found. You can create them now.");
+      } finally {
+        if (isMounted) setLoading(false);
+      }
+    })();
+    return () => {
+      isMounted = false;
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  // Refresh numbers when provider changes
+  useEffect(() => {
+    fetchNumbers(formData.provider);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [formData.provider]);
+
+  // Local helpers
+  const addSender = () =>
+    setSenders(s => [
+      ...s,
+      {
+        label: "",
+        phoneNumberId: "",
+        whatsAppBusinessNumber: "",
+        isDefault: s.length === 0,
+        isActive: true,
+      },
+    ]);
+  const removeSender = idx => setSenders(s => s.filter((_, i) => i !== idx));
+  const updateSender = (idx, key, value) =>
+    setSenders(s =>
+      s.map((row, i) => (i === idx ? { ...row, [key]: value } : row))
+    );
+  const setDefaultSender = idx =>
+    setSenders(s => s.map((row, i) => ({ ...row, isDefault: i === idx })));
+
+  // Form handlers
+  const handleChange = e => {
+    const { name, value } = e.target;
+    setFormData(p => ({ ...p, [name]: value }));
+  };
+  const handleToggle = e => {
+    const { name, checked } = e.target;
+    setFormData(p => ({ ...p, [name]: checked }));
+  };
+  const handleProviderChange = e => {
+    const provider = normalizeProvider(e.target.value);
+    setFormData(p => ({ ...p, provider }));
+  };
+
+  const validateBeforeSave = () => {
+    if (!formData.apiKey.trim()) {
+      toast.error("API Key / Token is required.");
+      return false;
+    }
+    return true;
+  };
+
+  const handleSave = async () => {
+    if (!validateBeforeSave()) return;
+    try {
+      setSaving(true);
+      const payload = {
+        provider: normalizeProvider(formData.provider),
+        apiUrl: (formData.apiUrl || "").trim(), // NEVER null (ApiUrl is NOT NULL)
+        apiKey: (formData.apiKey || "").trim(),
+        phoneNumberId: (formData.phoneNumberId || "").trim() || null,
+        wabaId: (formData.wabaId || "").trim() || null,
+        whatsAppBusinessNumber:
+          (formData.whatsAppBusinessNumber || "").trim() || null,
+        senderDisplayName: (formData.senderDisplayName || "").trim() || null,
+        webhookSecret: (formData.webhookSecret || "").trim() || null,
+        webhookVerifyToken: (formData.webhookVerifyToken || "").trim() || null,
+        webhookCallbackUrl: (formData.webhookCallbackUrl || "").trim() || null,
+        isActive: !!formData.isActive,
+      };
+      await axiosClient.put("/whatsappsettings/update", payload, withBiz());
+      toast.success("Settings saved.");
+    } catch {
+      toast.error("Failed to save settings.");
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  // const handleTest = async () => {
+  //   try {
+  //     setTesting(true);
+  //     setTestResult("");
+  //     const dto = {
+  //       provider: normalizeProvider(formData.provider),
+  //       apiUrl: (formData.apiUrl || "").trim(), // keep string
+  //       apiKey: (formData.apiKey || "").trim(),
+  //       phoneNumberId: (formData.phoneNumberId || "").trim() || null,
+  //       wabaId: (formData.wabaId || "").trim() || null,
+  //       whatsAppBusinessNumber:
+  //         (formData.whatsAppBusinessNumber || "").trim() || null,
+  //       senderDisplayName: (formData.senderDisplayName || "").trim() || null,
+  //       webhookSecret: (formData.webhookSecret || "").trim() || null,
+  //       webhookVerifyToken: (formData.webhookVerifyToken || "").trim() || null,
+  //       isActive: !!formData.isActive,
+  //     };
+  //     const res = await axiosClient.post(
+  //       "/whatsappsettings/test-connection",
+  //       dto,
+  //       withBiz()
+  //     );
+  //     setTestResult(JSON.stringify(res?.data ?? {}, null, 2));
+  //     toast.success("Connection test complete.");
+  //   } catch (err) {
+  //     setTestResult(String(err?.response?.data ?? err?.message ?? err));
+  //     toast.error("Connection test failed.");
+  //   } finally {
+  //     setTesting(false);
+  //   }
+  // };
+  const handleTest = async () => {
+    setTesting(true);
+    setTestResult("");
+    try {
+      // 1) Try the new convenience endpoint that uses saved settings
+      const res = await axiosClient.post(
+        "/whatsappsettings/test-connection/current",
+        {}, // no payload
+        withBiz() // include X-Business-Id header if available
+      );
+      setTestResult(JSON.stringify(res?.data ?? {}, null, 2));
+      toast.success(res?.data?.message || "Connection test complete.");
     } catch (err) {
-      // eslint-disable-next-line no-console
-      console.error("Test connection failed:", err);
-      const msg = err?.response?.data?.message || "❌ Test connection failed.";
-      setTestResult(msg);
-      toast.error(msg);
+      // If no saved settings, gracefully fall back to direct DTO test
+      const status = err?.response?.status;
+      const msg = err?.response?.data?.message || err?.message || String(err);
+
+      if (status === 404) {
+        try {
+          // 2) Fall back: build DTO from the form and call legacy test endpoint
+          const dto = {
+            provider: normalizeProvider(formData.provider),
+            apiUrl: (formData.apiUrl || "").trim(),
+            apiKey: (formData.apiKey || "").trim(),
+            phoneNumberId: (formData.phoneNumberId || "").trim() || null,
+            wabaId: (formData.wabaId || "").trim() || null,
+            whatsAppBusinessNumber:
+              (formData.whatsAppBusinessNumber || "").trim() || null,
+            senderDisplayName:
+              (formData.senderDisplayName || "").trim() || null,
+            webhookSecret: (formData.webhookSecret || "").trim() || null,
+            webhookVerifyToken:
+              (formData.webhookVerifyToken || "").trim() || null,
+            isActive: !!formData.isActive,
+          };
+
+          const res2 = await axiosClient.post(
+            "/whatsappsettings/test-connection",
+            dto,
+            withBiz()
+          );
+          setTestResult(JSON.stringify(res2?.data ?? {}, null, 2));
+          toast.success(res2?.data?.message || "Connection test complete.");
+        } catch (err2) {
+          setTestResult(
+            JSON.stringify(
+              err2?.response?.data ?? { error: String(err2) },
+              null,
+              2
+            )
+          );
+          toast.error(
+            err2?.response?.data?.message ||
+              "Connection test failed (DTO fallback)."
+          );
+        }
+      } else {
+        // Non-404 error from /current
+        setTestResult(
+          JSON.stringify(err?.response?.data ?? { error: msg }, null, 2)
+        );
+        toast.error(msg || "Connection test failed.");
+      }
     } finally {
       setTesting(false);
     }
   };
 
-  const handleSave = async () => {
-    if (validationErrors.length) {
-      toast.warn("⚠️ Please fix the form: " + validationErrors[0]);
-      return;
-    }
-    setLoading(true);
-    try {
-      const provider = normalizeProvider(formData.provider);
-
-      // 🔑 IMPORTANT:
-      // DB has ONLY ApiKey column (NOT NULL). For Meta_cloud we must store the TOKEN into ApiKey.
-      const apiKeyForDb =
-        provider === "Meta_cloud"
-          ? (formData.apiToken ?? "").trim() // map token -> ApiKey
-          : (formData.apiKey ?? "").trim(); // normal API key
-
-      const payload = {
-        provider,
-        apiUrl: (formData.apiUrl ?? "").trim().replace(/\/+$/, ""),
-        apiKey: apiKeyForDb, // <-- always filled to satisfy NOT NULL
-        apiToken: (formData.apiToken ?? "").trim(), // still send token for backend convenience
-        phoneNumberId: (formData.phoneNumberId ?? "").trim(),
-        wabaId: (formData.wabaId ?? "").trim(),
-        whatsAppBusinessNumber: (formData.whatsAppBusinessNumber ?? "").trim(),
-        senderDisplayName: (formData.senderDisplayName ?? "").trim(),
-        webhookSecret: (formData.webhookSecret ?? "").trim(),
-        webhookVerifyToken: (formData.webhookVerifyToken ?? "").trim(),
-        webhookCallbackUrl: (formData.webhookCallbackUrl ?? "").trim(),
-        isActive: !!formData.isActive,
-      };
-
-      await axiosClient.put("/whatsappsettings/update", payload);
-      toast.success("✅ WhatsApp settings saved.");
-      setTestResult("");
-    } catch (err) {
-      // eslint-disable-next-line no-console
-      console.error("Save failed:", err);
-      toast.error(
-        err?.response?.data?.message || "❌ Failed to save settings."
-      );
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  // UI config
-  const showField = key => {
-    const p = formData.provider;
-    const common = [
-      "apiUrl",
-      "senderDisplayName",
-      "whatsAppBusinessNumber",
-      "webhookSecret",
-      "webhookVerifyToken",
-      "webhookCallbackUrl",
-      "wabaId",
-      "isActive",
-    ];
-    const pinnacleOnly = ["apiKey", "phoneNumberId"];
-    const metaOnly = ["apiToken", "phoneNumberId"];
-
-    if (common.includes(key)) return true;
-    if (p === "Pinnacle" && pinnacleOnly.includes(key)) return true;
-    if (p === "Meta_cloud" && metaOnly.includes(key)) return true;
-    return false;
-  };
-
-  const placeholders = {
-    apiUrl: "https://graph.facebook.com/v18.0",
-    apiKey: "API Key",
-    apiToken: "Token (Meta Cloud)",
-    phoneNumberId: "Phone Number ID",
-    wabaId: "WABA ID",
-    whatsAppBusinessNumber: "+919012345678",
-    senderDisplayName: "Display name shown to recipients",
-    webhookSecret: "Optional signing secret (if provider supports)",
-    webhookVerifyToken: "Optional verify token for webhook setup",
-    webhookCallbackUrl: "Public HTTPS endpoint for webhook callbacks",
-  };
-
-  const labels = {
-    provider: "Provider",
-    apiUrl: "API URL",
-    apiKey: "API Key",
-    apiToken: "API Token",
-    phoneNumberId: "Phone Number ID",
-    wabaId: "WABA ID",
-    whatsAppBusinessNumber: "WhatsApp Business Number",
-    senderDisplayName: "Sender Display Name",
-    webhookSecret: "Webhook Secret (optional)",
-    webhookVerifyToken: "Webhook Verify Token (optional)",
-    webhookCallbackUrl: "Webhook Callback URL",
-    isActive: "Is Active",
-  };
-
   return (
-    <div className="min-h-screen flex items-start justify-center bg-gray-50 px-0 pt-2">
-      <form
-        onSubmit={e => {
-          e.preventDefault();
-          handleSave();
-        }}
-        className="bg-white shadow-sm border rounded-md w-full max-w-4xl p-4 md:p-6 hover:shadow-md transition"
-      >
-        <div className="flex items-center gap-2 mb-6">
-          <img
-            src="https://upload.wikimedia.org/wikipedia/commons/6/6b/WhatsApp.svg"
-            alt="WhatsApp"
-            className="w-6 h-6"
-          />
-          <h2 className="text-lg font-bold text-green-600">
-            WhatsApp API Settings
-          </h2>
-        </div>
+    <div className="max-w-5xl mx-auto px-4 py-6">
+      <h1 className="text-xl font-semibold mb-4">WhatsApp Settings</h1>
 
-        <p className="text-xs text-gray-500 mb-4">
-          ⚠️ Either <strong>API Key</strong> (Pinnacle) or{" "}
-          <strong>Token</strong> (Meta Cloud) must be provided.
-        </p>
+      {loading && (
+        <div className="text-sm text-gray-500 mb-4">Loading settings…</div>
+      )}
 
-        {/* Provider */}
-        <div className="mb-4">
-          <label
-            className="text-xs font-medium text-gray-600 block mb-1"
-            htmlFor="provider"
-          >
-            {labels.provider}
-          </label>
+      <div className="grid grid-cols-1 md:grid-cols-12 gap-4">
+        <div className="md:col-span-4">
+          <label className="text-xs text-gray-600 block mb-1">Provider</label>
           <select
-            id="provider"
             name="provider"
-            value={formData.provider}
-            onChange={onChange}
-            className="w-full px-3 py-1.5 border rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-green-500 border-gray-300"
+            value={normalizeProvider(formData.provider)}
+            onChange={handleProviderChange}
+            className="w-full px-3 py-2 border rounded-md text-sm border-gray-300"
           >
             {PROVIDERS.map(p => (
               <option key={p.value} value={p.value}>
@@ -310,109 +413,750 @@ export default function WhatsAppSettings() {
           </select>
         </div>
 
-        {/* Dynamic fields */}
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-x-6 gap-y-4">
-          {[
-            "apiUrl",
-            "apiKey",
-            "apiToken",
-            "phoneNumberId",
-            "wabaId",
-            "whatsAppBusinessNumber",
-            "senderDisplayName",
-            "webhookSecret",
-            "webhookVerifyToken",
-            "webhookCallbackUrl",
-          ]
-            .filter(showField)
-            .map(key => (
-              <div key={key}>
-                <label
-                  htmlFor={key}
-                  className="text-xs font-medium text-gray-600 block mb-1"
-                >
-                  {labels[key]}
-                </label>
-                {key === "apiToken" ? (
-                  <textarea
-                    id={key}
-                    name={key}
-                    rows={3}
-                    value={formData[key] || ""}
-                    onChange={onChange}
-                    placeholder={placeholders[key]}
-                    className="w-full px-3 py-1.5 border rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-green-500 border-gray-300 resize-none"
-                  />
-                ) : (
-                  <input
-                    id={key}
-                    type="text"
-                    name={key}
-                    value={formData[key] || ""}
-                    onChange={onChange}
-                    placeholder={placeholders[key]}
-                    className="w-full px-3 py-1.5 border rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-green-500 border-gray-300"
-                  />
-                )}
-              </div>
-            ))}
+        <div className="md:col-span-4">
+          <label className="text-xs text-gray-600 block mb-1">
+            API URL (optional)
+          </label>
+          <input
+            type="text"
+            name="apiUrl"
+            value={formData.apiUrl}
+            onChange={handleChange}
+            placeholder="https://api.example.com"
+            className="w-full px-3 py-2 border rounded-md text-sm border-gray-300"
+          />
+        </div>
 
-          <div className="flex items-center gap-2 mt-2">
+        <div className="md:col-span-4">
+          <label className="text-xs text-gray-600 block mb-1">
+            {providerLabel}
+          </label>
+          <input
+            type="text"
+            name="apiKey"
+            value={formData.apiKey}
+            onChange={handleChange}
+            placeholder={providerLabel}
+            className="w-full px-3 py-2 border rounded-md text-sm border-gray-300"
+          />
+        </div>
+
+        <div className="md:col-span-4">
+          <label className="text-xs text-gray-600 block mb-1">
+            WABA ID (Meta only)
+          </label>
+          <input
+            type="text"
+            name="wabaId"
+            value={formData.wabaId}
+            onChange={handleChange}
+            placeholder="e.g. 123456789012345"
+            className="w-full px-3 py-2 border rounded-md text-sm border-gray-300"
+          />
+        </div>
+
+        {/* Legacy single-number fields (kept for back-compat) */}
+        <div className="md:col-span-4">
+          <label className="text-xs text-gray-600 block mb-1">
+            Phone Number ID (legacy)
+          </label>
+          <input
+            type="text"
+            name="phoneNumberId"
+            value={formData.phoneNumberId}
+            onChange={handleChange}
+            placeholder="1234567890"
+            className="w-full px-3 py-2 border rounded-md text-sm border-gray-300"
+          />
+        </div>
+
+        <div className="md:col-span-4">
+          <label className="text-xs text-gray-600 block mb-1">
+            WhatsApp Business Number (legacy)
+          </label>
+          <input
+            type="text"
+            name="whatsAppBusinessNumber"
+            value={formData.whatsAppBusinessNumber}
+            onChange={handleChange}
+            placeholder="+14150000001"
+            className="w-full px-3 py-2 border rounded-md text-sm border-gray-300"
+          />
+        </div>
+
+        <div className="md:col-span-4">
+          <label className="text-xs text-gray-600 block mb-1">
+            Sender Display Name (optional)
+          </label>
+          <input
+            type="text"
+            name="senderDisplayName"
+            value={formData.senderDisplayName}
+            onChange={handleChange}
+            placeholder="e.g. Acme Support"
+            className="w-full px-3 py-2 border rounded-md text-sm border-gray-300"
+          />
+        </div>
+
+        <div className="md:col-span-4">
+          <label className="text-xs text-gray-600 block mb-1">
+            Webhook Verify Token
+          </label>
+          <input
+            type="text"
+            name="webhookVerifyToken"
+            value={formData.webhookVerifyToken}
+            onChange={handleChange}
+            placeholder="verify-token"
+            className="w-full px-3 py-2 border rounded-md text-sm border-gray-300"
+          />
+        </div>
+
+        <div className="md:col-span-4">
+          <label className="text-xs text-gray-600 block mb-1">
+            Webhook Secret
+          </label>
+          <input
+            type="text"
+            name="webhookSecret"
+            value={formData.webhookSecret}
+            onChange={handleChange}
+            placeholder="secret"
+            className="w-full px-3 py-2 border rounded-md text-sm border-gray-300"
+          />
+        </div>
+
+        <div className="md:col-span-8">
+          <label className="text-xs text-gray-600 block mb-1">
+            Webhook Callback URL
+          </label>
+          <input
+            type="text"
+            name="webhookCallbackUrl"
+            value={formData.webhookCallbackUrl}
+            onChange={handleChange}
+            placeholder="https://example.com/api/webhooks/whatsapp"
+            className="w-full px-3 py-2 border rounded-md text-sm border-gray-300"
+          />
+        </div>
+
+        <div className="md:col-span-4 flex items-end">
+          <label className="inline-flex items-center gap-2 text-sm text-gray-700">
             <input
               type="checkbox"
               name="isActive"
-              checked={formData.isActive}
-              onChange={onChange}
-              className="w-4 h-4"
+              checked={!!formData.isActive}
+              onChange={handleToggle}
+              className="h-4 w-4"
             />
-            <label className="text-sm font-medium text-gray-700">
-              {labels.isActive}
-            </label>
-          </div>
+            Active
+          </label>
         </div>
+      </div>
 
-        {validationErrors.length > 0 && (
-          <div className="mt-4 text-sm text-red-600">
-            ⚠️ {validationErrors[0]}
-          </div>
-        )}
-
-        <div className="pt-6 border-t mt-6 flex flex-col md:flex-row gap-4 justify-end">
-          <button
-            type="submit"
-            disabled={loading}
-            className={`px-4 py-2 rounded-md text-white text-sm font-medium ${
-              loading ? "bg-gray-400" : "bg-green-600 hover:bg-green-700"
-            }`}
-          >
-            {loading ? "Saving..." : "💾 Save Settings"}
-          </button>
-
+      {/* Senders */}
+      <div className="mt-8 border-t pt-6">
+        <div className="flex items-center justify-between mb-3">
+          <h3 className="text-sm font-semibold text-gray-700">
+            Senders (multiple numbers)
+          </h3>
           <button
             type="button"
-            onClick={handleTestConnection}
-            disabled={testing}
-            className={`px-4 py-2 rounded-md text-white text-sm font-medium ${
-              testing ? "bg-gray-400" : "bg-blue-600 hover:bg-blue-700"
-            }`}
+            onClick={addSender}
+            className="px-3 py-1.5 rounded-md text-sm bg-gray-100 hover:bg-gray-200"
           >
-            {testing ? "Testing..." : "🔄 Test Connection"}
+            + Add number
           </button>
         </div>
 
-        {testResult && (
-          <div
-            className={`mt-4 text-center font-semibold ${
-              testResult.startsWith("✅") ? "text-green-600" : "text-red-600"
-            }`}
-          >
-            {testResult}
+        {senders.length === 0 && (
+          <div className="text-xs text-gray-500 mb-2">
+            No senders yet. Click <b>+ Add number</b> to add your first phone.
           </div>
         )}
-      </form>
+
+        <div className="space-y-3">
+          {senders.map((row, idx) => (
+            <div
+              key={idx}
+              className="grid grid-cols-1 md:grid-cols-12 gap-3 bg-gray-50 p-3 rounded"
+            >
+              <div className="md:col-span-3">
+                <label className="text-xs text-gray-600 block mb-1">
+                  Label (optional)
+                </label>
+                <input
+                  type="text"
+                  value={row.label || ""}
+                  onChange={e => updateSender(idx, "label", e.target.value)}
+                  placeholder="e.g. Sales India"
+                  className="w-full px-3 py-1.5 border rounded-md text-sm border-gray-300"
+                />
+              </div>
+
+              <div className="md:col-span-4">
+                <label className="text-xs text-gray-600 block mb-1">
+                  WhatsApp Business Number
+                </label>
+                <input
+                  type="text"
+                  value={row.whatsAppBusinessNumber || ""}
+                  onChange={e =>
+                    updateSender(idx, "whatsAppBusinessNumber", e.target.value)
+                  }
+                  placeholder="+14150000001"
+                  className="w-full px-3 py-1.5 border rounded-md text-sm border-gray-300"
+                />
+              </div>
+
+              <div className="md:col-span-4">
+                <label className="text-xs text-gray-600 block mb-1">
+                  Phone Number ID
+                </label>
+                <input
+                  type="text"
+                  value={row.phoneNumberId || ""}
+                  onChange={e =>
+                    updateSender(idx, "phoneNumberId", e.target.value)
+                  }
+                  placeholder="1234567890"
+                  className="w-full px-3 py-1.5 border rounded-md text-sm border-gray-300"
+                />
+              </div>
+
+              <div className="md:col-span-1 flex items-end gap-2 flex-wrap">
+                <button
+                  type="button"
+                  onClick={async () => {
+                    try {
+                      const saved = await upsertNumber(formData.provider, row);
+                      setSenders(s =>
+                        s.map((r, i) =>
+                          i === idx ? { ...r, id: saved?.id || r.id } : r
+                        )
+                      );
+                      toast.success("Saved.");
+                    } catch {
+                      toast.error("Save failed.");
+                    }
+                  }}
+                  className="px-2 py-1 rounded text-xs bg-blue-600 text-white"
+                  title="Save this sender"
+                >
+                  Save
+                </button>
+
+                <button
+                  type="button"
+                  onClick={async () => {
+                    try {
+                      if (!row.id) {
+                        removeSender(idx);
+                        return;
+                      }
+                      await deleteNumber(formData.provider, row.id);
+                      removeSender(idx);
+                      toast.success("Deleted.");
+                    } catch {
+                      toast.error("Delete failed.");
+                    }
+                  }}
+                  className="px-2 py-1 rounded text-xs bg-red-50 text-red-700"
+                  title="Remove"
+                >
+                  ✕
+                </button>
+
+                <button
+                  type="button"
+                  onClick={async () => {
+                    try {
+                      if (!row.id) {
+                        const saved = await upsertNumber(
+                          formData.provider,
+                          row
+                        );
+                        await setDefaultNumber(formData.provider, saved?.id);
+                      } else {
+                        await setDefaultNumber(formData.provider, row.id);
+                      }
+                      setDefaultSender(idx);
+                      toast.success("Default set.");
+                    } catch {
+                      toast.error("Failed to set default.");
+                    }
+                  }}
+                  className={`px-2 py-1 rounded text-xs ${
+                    row.isDefault ? "bg-green-600 text-white" : "bg-gray-200"
+                  }`}
+                  title="Set as default sender"
+                >
+                  {row.isDefault ? "Default" : "Make default"}
+                </button>
+              </div>
+            </div>
+          ))}
+        </div>
+
+        <p className="text-[11px] text-gray-500 mt-2">
+          The <b>Default</b> sender will be used when no phone is chosen
+          explicitly while sending.
+        </p>
+      </div>
+
+      <div className="pt-6 border-t mt-6 flex flex-col md:flex-row gap-4 justify-end">
+        <button
+          type="button"
+          onClick={handleSave}
+          disabled={saving}
+          className={`px-4 py-2 rounded-md text-sm ${
+            saving ? "bg-gray-300" : "bg-blue-600 hover:bg-blue-700 text-white"
+          }`}
+        >
+          {saving ? "Saving…" : "Save Settings"}
+        </button>
+
+        <button
+          type="button"
+          onClick={handleTest}
+          disabled={testing}
+          className={`px-4 py-2 rounded-md text-sm ${
+            testing ? "bg-gray-300" : "bg-gray-100 hover:bg-gray-200"
+          }`}
+        >
+          {testing ? "Testing…" : "Test Connection"}
+        </button>
+      </div>
+
+      {testResult && (
+        <div className="mt-4">
+          <label className="text-xs text-gray-600 block mb-1">
+            Test Result
+          </label>
+          <pre className="text-xs bg-gray-50 border border-gray-200 p-3 rounded overflow-auto">
+            {testResult}
+          </pre>
+        </div>
+      )}
     </div>
   );
 }
+
+// // 📄 src/pages/Settings/WhatsAppSettings.jsx
+// import React, { useState, useEffect, useMemo } from "react";
+// import axiosClient from "../../api/axiosClient";
+// import { toast } from "react-toastify";
+
+// // Canonical provider values (MUST match backend)
+// const PROVIDERS = [
+//   { value: "Pinnacle", label: "Pinnacle (Official)" },
+//   { value: "Meta_cloud", label: "Meta Cloud API" },
+// ];
+
+// // Map legacy/lowercase to canonical
+// const normalizeProvider = p => {
+//   if (!p) return "Pinnacle";
+//   const raw = String(p).trim();
+//   if (raw === "Pinnacle" || raw === "Meta_cloud") return raw;
+//   const lower = raw.toLowerCase();
+//   if (["pinnacle", "pinbot", "pinnacle (official)"].includes(lower))
+//     return "Pinnacle";
+//   if (["meta_cloud", "meta cloud", "meta", "meta-cloud"].includes(lower))
+//     return "Meta_cloud";
+//   return "Pinnacle";
+// };
+
+// export default function WhatsAppSettings() {
+//   const [formData, setFormData] = useState({
+//     provider: "Pinnacle",
+//     apiUrl: "",
+//     apiKey: "",
+//     apiToken: "",
+//     phoneNumberId: "",
+//     wabaId: "",
+//     whatsAppBusinessNumber: "",
+//     senderDisplayName: "",
+//     webhookSecret: "",
+//     webhookVerifyToken: "",
+//     webhookCallbackUrl: "",
+//     isActive: true,
+//   });
+
+//   const [loading, setLoading] = useState(false);
+//   const [testing, setTesting] = useState(false);
+//   const [testResult, setTestResult] = useState("");
+
+//   useEffect(() => {
+//     (async () => {
+//       try {
+//         const { data } = await axiosClient.get("/whatsappsettings/me");
+//         if (data) {
+//           const provider = normalizeProvider(data.provider);
+//           // If coming from DB with only ApiKey column populated for Meta_cloud, mirror it into apiToken for UI
+//           const apiKeyFromDb = data.apiKey ?? "";
+//           const apiTokenFromDb =
+//             provider === "Meta_cloud" && !data.apiToken
+//               ? apiKeyFromDb
+//               : data.apiToken ?? "";
+
+//           setFormData(prev => ({
+//             ...prev,
+//             provider,
+//             apiUrl: data.apiUrl || "",
+//             apiKey: apiKeyFromDb,
+//             apiToken: apiTokenFromDb,
+//             phoneNumberId: data.phoneNumberId || "",
+//             wabaId: data.wabaId || "",
+//             whatsAppBusinessNumber: data.whatsAppBusinessNumber || "",
+//             senderDisplayName: data.senderDisplayName || "",
+//             webhookSecret: data.webhookSecret || "",
+//             webhookVerifyToken: data.webhookVerifyToken || "",
+//             webhookCallbackUrl: data.webhookCallbackUrl || "",
+//             isActive: data.isActive ?? true,
+//           }));
+//         }
+//       } catch {
+//         toast.info("ℹ️ No WhatsApp settings found. You can create them now.");
+//       }
+//     })();
+//   }, []);
+
+//   const onChange = e => {
+//     const { name, value, type, checked } = e.target;
+//     setFormData(f => ({
+//       ...f,
+//       [name]:
+//         name === "provider"
+//           ? normalizeProvider(value)
+//           : type === "checkbox"
+//           ? checked
+//           : value,
+//     }));
+//   };
+
+//   // Validation
+//   const validationErrors = useMemo(() => {
+//     const f = Object.fromEntries(
+//       Object.entries(formData).map(([k, v]) => [
+//         k,
+//         typeof v === "string" ? v.trim() : v,
+//       ])
+//     );
+//     const errors = [];
+
+//     if (!f.apiUrl) errors.push("API URL is required.");
+
+//     if (f.provider === "Meta_cloud") {
+//       if (!f.apiToken) errors.push("Token is required for Meta Cloud.");
+//       if (!f.phoneNumberId)
+//         errors.push("Phone Number ID is required for Meta Cloud.");
+//     }
+
+//     if (f.provider === "Pinnacle") {
+//       if (!f.apiKey) errors.push("API Key is required for Pinnacle.");
+//       if (!f.phoneNumberId && !f.wabaId) {
+//         errors.push("Provide Phone Number ID or WABA ID for Pinnacle.");
+//       }
+//       if (!f.whatsAppBusinessNumber) {
+//         errors.push("WhatsApp Business Number is required for Pinnacle.");
+//       }
+//       if (!f.webhookCallbackUrl) {
+//         errors.push("Webhook Callback URL is required for Pinnacle.");
+//       } else if (!/^https:\/\/.+/i.test(f.webhookCallbackUrl)) {
+//         errors.push("Webhook Callback URL must be a valid HTTPS URL.");
+//       }
+//     }
+
+//     // Global rule: At least one credential required (defensive)
+//     if (!f.apiKey && !f.apiToken) {
+//       errors.push("Either API Key or Token must be provided.");
+//     }
+
+//     return errors;
+//   }, [formData]);
+
+//   const handleTestConnection = async () => {
+//     if (validationErrors.length) {
+//       toast.warn("⚠️ Please fix the form: " + validationErrors[0]);
+//       return;
+//     }
+//     setTesting(true);
+//     try {
+//       const provider = normalizeProvider(formData.provider);
+//       const payload = {
+//         provider,
+//         apiUrl: (formData.apiUrl ?? "").trim().replace(/\/+$/, ""),
+//         // For testing we can still send both, backend can choose what it uses
+//         apiKey: (formData.apiKey ?? "").trim(),
+//         apiToken: (formData.apiToken ?? "").trim(),
+//         phoneNumberId: (formData.phoneNumberId ?? "").trim(),
+//         wabaId: (formData.wabaId ?? "").trim(),
+//         whatsAppBusinessNumber: (formData.whatsAppBusinessNumber ?? "").trim(),
+//       };
+
+//       const { data } = await axiosClient.post(
+//         "/whatsappsettings/test-connection",
+//         payload
+//       );
+//       setTestResult(data?.message || "✅ Connection successful.");
+//       toast.success("✅ Test connection succeeded.");
+//     } catch (err) {
+//       // eslint-disable-next-line no-console
+//       console.error("Test connection failed:", err);
+//       const msg = err?.response?.data?.message || "❌ Test connection failed.";
+//       setTestResult(msg);
+//       toast.error(msg);
+//     } finally {
+//       setTesting(false);
+//     }
+//   };
+
+//   const handleSave = async () => {
+//     if (validationErrors.length) {
+//       toast.warn("⚠️ Please fix the form: " + validationErrors[0]);
+//       return;
+//     }
+//     setLoading(true);
+//     try {
+//       const provider = normalizeProvider(formData.provider);
+
+//       // 🔑 IMPORTANT:
+//       // DB has ONLY ApiKey column (NOT NULL). For Meta_cloud we must store the TOKEN into ApiKey.
+//       const apiKeyForDb =
+//         provider === "Meta_cloud"
+//           ? (formData.apiToken ?? "").trim() // map token -> ApiKey
+//           : (formData.apiKey ?? "").trim(); // normal API key
+
+//       const payload = {
+//         provider,
+//         apiUrl: (formData.apiUrl ?? "").trim().replace(/\/+$/, ""),
+//         apiKey: apiKeyForDb, // <-- always filled to satisfy NOT NULL
+//         apiToken: (formData.apiToken ?? "").trim(), // still send token for backend convenience
+//         phoneNumberId: (formData.phoneNumberId ?? "").trim(),
+//         wabaId: (formData.wabaId ?? "").trim(),
+//         whatsAppBusinessNumber: (formData.whatsAppBusinessNumber ?? "").trim(),
+//         senderDisplayName: (formData.senderDisplayName ?? "").trim(),
+//         webhookSecret: (formData.webhookSecret ?? "").trim(),
+//         webhookVerifyToken: (formData.webhookVerifyToken ?? "").trim(),
+//         webhookCallbackUrl: (formData.webhookCallbackUrl ?? "").trim(),
+//         isActive: !!formData.isActive,
+//       };
+
+//       await axiosClient.put("/whatsappsettings/update", payload);
+//       toast.success("✅ WhatsApp settings saved.");
+//       setTestResult("");
+//     } catch (err) {
+//       // eslint-disable-next-line no-console
+//       console.error("Save failed:", err);
+//       toast.error(
+//         err?.response?.data?.message || "❌ Failed to save settings."
+//       );
+//     } finally {
+//       setLoading(false);
+//     }
+//   };
+
+//   // UI config
+//   const showField = key => {
+//     const p = formData.provider;
+//     const common = [
+//       "apiUrl",
+//       "senderDisplayName",
+//       "whatsAppBusinessNumber",
+//       "webhookSecret",
+//       "webhookVerifyToken",
+//       "webhookCallbackUrl",
+//       "wabaId",
+//       "isActive",
+//     ];
+//     const pinnacleOnly = ["apiKey", "phoneNumberId"];
+//     const metaOnly = ["apiToken", "phoneNumberId"];
+
+//     if (common.includes(key)) return true;
+//     if (p === "Pinnacle" && pinnacleOnly.includes(key)) return true;
+//     if (p === "Meta_cloud" && metaOnly.includes(key)) return true;
+//     return false;
+//   };
+
+//   const placeholders = {
+//     apiUrl: "https://graph.facebook.com/v18.0",
+//     apiKey: "API Key",
+//     apiToken: "Token (Meta Cloud)",
+//     phoneNumberId: "Phone Number ID",
+//     wabaId: "WABA ID",
+//     whatsAppBusinessNumber: "+919012345678",
+//     senderDisplayName: "Display name shown to recipients",
+//     webhookSecret: "Optional signing secret (if provider supports)",
+//     webhookVerifyToken: "Optional verify token for webhook setup",
+//     webhookCallbackUrl: "Public HTTPS endpoint for webhook callbacks",
+//   };
+
+//   const labels = {
+//     provider: "Provider",
+//     apiUrl: "API URL",
+//     apiKey: "API Key",
+//     apiToken: "API Token",
+//     phoneNumberId: "Phone Number ID",
+//     wabaId: "WABA ID",
+//     whatsAppBusinessNumber: "WhatsApp Business Number",
+//     senderDisplayName: "Sender Display Name",
+//     webhookSecret: "Webhook Secret (optional)",
+//     webhookVerifyToken: "Webhook Verify Token (optional)",
+//     webhookCallbackUrl: "Webhook Callback URL",
+//     isActive: "Is Active",
+//   };
+
+//   return (
+//     <div className="min-h-screen flex items-start justify-center bg-gray-50 px-0 pt-2">
+//       <form
+//         onSubmit={e => {
+//           e.preventDefault();
+//           handleSave();
+//         }}
+//         className="bg-white shadow-sm border rounded-md w-full max-w-4xl p-4 md:p-6 hover:shadow-md transition"
+//       >
+//         <div className="flex items-center gap-2 mb-6">
+//           <img
+//             src="https://upload.wikimedia.org/wikipedia/commons/6/6b/WhatsApp.svg"
+//             alt="WhatsApp"
+//             className="w-6 h-6"
+//           />
+//           <h2 className="text-lg font-bold text-green-600">
+//             WhatsApp API Settings
+//           </h2>
+//         </div>
+
+//         <p className="text-xs text-gray-500 mb-4">
+//           ⚠️ Either <strong>API Key</strong> (Pinnacle) or{" "}
+//           <strong>Token</strong> (Meta Cloud) must be provided.
+//         </p>
+
+//         {/* Provider */}
+//         <div className="mb-4">
+//           <label
+//             className="text-xs font-medium text-gray-600 block mb-1"
+//             htmlFor="provider"
+//           >
+//             {labels.provider}
+//           </label>
+//           <select
+//             id="provider"
+//             name="provider"
+//             value={formData.provider}
+//             onChange={onChange}
+//             className="w-full px-3 py-1.5 border rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-green-500 border-gray-300"
+//           >
+//             {PROVIDERS.map(p => (
+//               <option key={p.value} value={p.value}>
+//                 {p.label}
+//               </option>
+//             ))}
+//           </select>
+//         </div>
+
+//         {/* Dynamic fields */}
+//         <div className="grid grid-cols-1 md:grid-cols-2 gap-x-6 gap-y-4">
+//           {[
+//             "apiUrl",
+//             "apiKey",
+//             "apiToken",
+//             "phoneNumberId",
+//             "wabaId",
+//             "whatsAppBusinessNumber",
+//             "senderDisplayName",
+//             "webhookSecret",
+//             "webhookVerifyToken",
+//             "webhookCallbackUrl",
+//           ]
+//             .filter(showField)
+//             .map(key => (
+//               <div key={key}>
+//                 <label
+//                   htmlFor={key}
+//                   className="text-xs font-medium text-gray-600 block mb-1"
+//                 >
+//                   {labels[key]}
+//                 </label>
+//                 {key === "apiToken" ? (
+//                   <textarea
+//                     id={key}
+//                     name={key}
+//                     rows={3}
+//                     value={formData[key] || ""}
+//                     onChange={onChange}
+//                     placeholder={placeholders[key]}
+//                     className="w-full px-3 py-1.5 border rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-green-500 border-gray-300 resize-none"
+//                   />
+//                 ) : (
+//                   <input
+//                     id={key}
+//                     type="text"
+//                     name={key}
+//                     value={formData[key] || ""}
+//                     onChange={onChange}
+//                     placeholder={placeholders[key]}
+//                     className="w-full px-3 py-1.5 border rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-green-500 border-gray-300"
+//                   />
+//                 )}
+//               </div>
+//             ))}
+
+//           <div className="flex items-center gap-2 mt-2">
+//             <input
+//               type="checkbox"
+//               name="isActive"
+//               checked={formData.isActive}
+//               onChange={onChange}
+//               className="w-4 h-4"
+//             />
+//             <label className="text-sm font-medium text-gray-700">
+//               {labels.isActive}
+//             </label>
+//           </div>
+//         </div>
+
+//         {validationErrors.length > 0 && (
+//           <div className="mt-4 text-sm text-red-600">
+//             ⚠️ {validationErrors[0]}
+//           </div>
+//         )}
+
+//         <div className="pt-6 border-t mt-6 flex flex-col md:flex-row gap-4 justify-end">
+//           <button
+//             type="submit"
+//             disabled={loading}
+//             className={`px-4 py-2 rounded-md text-white text-sm font-medium ${
+//               loading ? "bg-gray-400" : "bg-green-600 hover:bg-green-700"
+//             }`}
+//           >
+//             {loading ? "Saving..." : "💾 Save Settings"}
+//           </button>
+
+//           <button
+//             type="button"
+//             onClick={handleTestConnection}
+//             disabled={testing}
+//             className={`px-4 py-2 rounded-md text-white text-sm font-medium ${
+//               testing ? "bg-gray-400" : "bg-blue-600 hover:bg-blue-700"
+//             }`}
+//           >
+//             {testing ? "Testing..." : "🔄 Test Connection"}
+//           </button>
+//         </div>
+
+//         {testResult && (
+//           <div
+//             className={`mt-4 text-center font-semibold ${
+//               testResult.startsWith("✅") ? "text-green-600" : "text-red-600"
+//             }`}
+//           >
+//             {testResult}
+//           </div>
+//         )}
+//       </form>
+//     </div>
+//   );
+// }
 
 // // src/pages/Settings/WhatsAppSettings.jsx
 // import React, { useState, useEffect, useMemo } from "react";
