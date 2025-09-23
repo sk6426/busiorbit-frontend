@@ -403,9 +403,9 @@ function CampaignBuilderPage() {
         <div className="space-y-4">
           {/* Campaign meta */}
           <section className="rounded-xl border bg-white p-4 shadow-sm">
-            <h2 className="mb-3 text-sm font-semibold text-gray-800">
+            {/* <h2 className="mb-3 text-sm font-semibold text-gray-800">
               Campaign details
-            </h2>
+            </h2> */}
             <div className="space-y-3 text-sm">
               <div>
                 <label className="mb-1 block font-medium text-gray-700">
