@@ -12,6 +12,8 @@ import {
   materialize,
 } from "../api/csvApi";
 
+/* ---------------- Utilities ---------------- */
+
 function saveBlob(blob, filename) {
   const url = window.URL.createObjectURL(blob);
   const a = document.createElement("a");
@@ -20,6 +22,96 @@ function saveBlob(blob, filename) {
   a.click();
   window.URL.revokeObjectURL(url);
 }
+
+const norm = s =>
+  String(s || "")
+    .toLowerCase()
+    .replace(/[\s._-]+/g, "")
+    .replace(/[^a-z0-9]/g, "");
+
+const PHONE_ALIASES = ["phone", "mobile", "whatsapp", "number", "phonee164"];
+
+// Canonical keys we want to map in CSV (beyond {{n}})
+const CANONICAL_KEYS = [
+  "header.image_url",
+  "header.video_url",
+  "header.document_url",
+  "button1.url_param",
+  "button2.url_param",
+  "button3.url_param",
+];
+
+// Aliases for non-{{n}} canonical keys
+const ALIASES = {
+  "header.image_url": ["image", "imageurl", "headerimage"],
+  "header.video_url": ["video", "videourl", "headervideo"],
+  "header.document_url": ["document", "doc", "pdf", "documenturl", "pdfurl"],
+  "button1.url_param": ["btn1", "button1", "url1"],
+  "button2.url_param": ["btn2", "button2", "url2"],
+  "button3.url_param": ["btn3", "button3", "url3"],
+};
+
+// Auto-pick CSV columns for expected canonical keys.
+function autoPick(headers, wants, fallbackGreedyBody = false) {
+  const map = {};
+  const used = new Set();
+  const H = headers.map(h => ({ raw: h, k: norm(h) }));
+
+  // 1) exact (case-insensitive)
+  for (const key of wants) {
+    const hit = headers.find(h => h.toLowerCase() === key.toLowerCase());
+    if (hit) {
+      map[key] = hit;
+      used.add(hit);
+    }
+  }
+
+  // 2) alias match
+  for (const key of wants) {
+    if (map[key]) continue;
+    const aliases = ALIASES[key] || [];
+    const hit = H.find(
+      h => aliases.some(a => h.k === norm(a)) && !used.has(h.raw)
+    );
+    if (hit) {
+      map[key] = hit.raw;
+      used.add(hit.raw);
+    }
+  }
+
+  // 3) “paramN” / “body.N” convenience for body.*
+  for (const key of wants) {
+    if (map[key]) continue;
+    const m = key.match(/^body\.(\d+)$/);
+    if (!m) continue;
+    const n = m[1];
+    const hit = H.find(
+      h => (h.k === `param${n}` || h.k === `body${n}`) && !used.has(h.raw)
+    );
+    if (hit) {
+      map[key] = hit.raw;
+      used.add(hit.raw);
+    }
+  }
+
+  // 4) greedy fill for remaining body.* only
+  if (fallbackGreedyBody) {
+    const remaining = headers.filter(h => !used.has(h));
+    for (const key of wants) {
+      if (!map[key] && key.startsWith("body.")) {
+        const pick = remaining.shift();
+        if (pick) {
+          map[key] = pick;
+          used.add(pick);
+        }
+      }
+    }
+  }
+
+  return map;
+}
+
+/* ---------------- Component ---------------- */
 
 export default function CsvAudienceSection({ campaignId }) {
   const [loading, setLoading] = useState(true);
@@ -33,7 +125,12 @@ export default function CsvAudienceSection({ campaignId }) {
   });
   const [valRes, setValRes] = useState(null);
 
+  // Legacy {{n}} param UI (kept for now)
   const [paramMappings, setParamMappings] = useState([]);
+  // New: canonical key -> CSV column mapping (header/video/document/buttons)
+  const [expectedKeys, setExpectedKeys] = useState([]); // e.g. ['body.1','header.video_url','button1.url_param',...]
+  const [keyToColumn, setKeyToColumn] = useState({});
+
   const [phoneHeader, setPhoneHeader] = useState("");
   const [audienceName, setAudienceName] = useState(() => {
     const d = new Date();
@@ -46,8 +143,12 @@ export default function CsvAudienceSection({ campaignId }) {
   const [dryPreview, setDryPreview] = useState(null);
   const [persisting, setPersisting] = useState(false);
 
+  // Collapsible UX
+  const [showMapping, setShowMapping] = useState(false);
+
   const topRef = useRef(null);
 
+  // Load schema and prime expected keys / {{n}} slots
   useEffect(() => {
     let alive = true;
     (async () => {
@@ -57,7 +158,17 @@ export default function CsvAudienceSection({ campaignId }) {
         if (!alive) return;
         setSchema(sc);
 
+        // 1) Build expected keys from placeholderCount + any canonical keys present in schema.headers
         const N = Number(sc?.placeholderCount || 0);
+        const bodyKeys = Array.from({ length: N }, (_, i) => `body.${i + 1}`);
+
+        const hdrs = Array.isArray(sc?.headers) ? sc.headers : [];
+        const extraKeys = CANONICAL_KEYS.filter(k => hdrs.includes(k));
+
+        const keys = [...bodyKeys, ...extraKeys];
+        setExpectedKeys(keys);
+
+        // 2) Init legacy {{n}} mapping slots
         setParamMappings(
           Array.from({ length: N }, (_, i) => ({
             index: i + 1,
@@ -77,11 +188,13 @@ export default function CsvAudienceSection({ campaignId }) {
     };
   }, [campaignId]);
 
+  // Available headers from sample/batch/schema
   const csvHeaders = useMemo(
     () => sample?.headers ?? batch?.headerJson ?? schema?.headers ?? [],
     [schema, batch, sample]
   );
 
+  // Update a single {{n}} mapping slot
   const updateMapping = (idx, patch) =>
     setParamMappings(prev => {
       const next = [...prev];
@@ -109,17 +222,31 @@ export default function CsvAudienceSection({ campaignId }) {
       setSample(s);
 
       const hdrs = Array.isArray(s?.headers) ? s.headers : [];
+
+      // Auto-pick phone column
       const lower = hdrs.map(h => String(h).toLowerCase());
       const guessIdx = lower.findIndex(h =>
-        ["phone", "mobile", "whatsapp", "number", "phonee164"].some(k =>
-          h.includes(k)
-        )
+        PHONE_ALIASES.some(k => h.includes(k))
       );
       setPhoneHeader(guessIdx >= 0 ? hdrs[guessIdx] : "");
 
+      // Auto-map canonical keys (body/header/buttons)
+      const km = autoPick(hdrs, expectedKeys, /*fallbackGreedyBody*/ true);
+      setKeyToColumn(km);
+
+      // Also seed the legacy {{n}} list so current backend keeps working
+      setParamMappings(prev =>
+        prev.map(p => {
+          const key = `body.${p.index}`;
+          return km[key] ? { ...p, sourceName: km[key] } : p;
+        })
+      );
+
+      // Try server suggestions (optional; reconciled over auto map)
       try {
         const sugg = await suggestMappings(campaignId, up?.batchId);
         if (Array.isArray(sugg?.items)) {
+          // Expect items like { index: 1, sourceType: "csv"|"const", sourceName, constValue }
           setParamMappings(prev =>
             prev.map(p => {
               const m = sugg.items.find(x => x.index === p.index);
@@ -128,8 +255,11 @@ export default function CsvAudienceSection({ campaignId }) {
           );
         }
       } catch {
-        /* optional */
+        /* no-op */
       }
+
+      // Keep UI minimal by default
+      setShowMapping(false);
     } catch (e) {
       toast.error(e?.message || "CSV upload failed.");
     }
@@ -158,25 +288,37 @@ export default function CsvAudienceSection({ campaignId }) {
     }
   };
 
-  // Dictionary the backend expects for mappings (eg { "{{1}}": "Nicolus", "{{2}}": "Email" }).
+  // Build the mapping dictionary the backend expects.
+  // Keeps compatibility with your existing backend:
+  // - "{{n}}" => "CSV_COLUMN" | "constant:VALUE"
+  // - canonical keys (header.*, button*.url_param) => "CSV_COLUMN"
   const buildMappingDict = () => {
     const dict = {};
+
+    // Legacy body placeholders
     for (const m of paramMappings) {
       const key = `{{${m.index}}}`;
       if (m.sourceType === "csv") {
         dict[key] = m.sourceName || "";
       } else {
-        // IMPORTANT: backend expects "constant:" prefix
         dict[key] = `constant:${m.constValue ?? ""}`;
       }
     }
+
+    // Canonical keys passthrough
+    for (const [k, v] of Object.entries(keyToColumn || {})) {
+      if (!v) continue;
+      dict[k] = v; // column name
+    }
+
     return dict;
   };
+
   const handleDryRun = async () => {
     if (!batch?.batchId) return toast.warn("Upload a CSV first.");
 
     try {
-      await saveMappings(campaignId, buildMappingDict()); // optional
+      await saveMappings(campaignId, buildMappingDict()); // optional persistence
 
       const body = {
         csvBatchId: batch.batchId,
@@ -184,8 +326,8 @@ export default function CsvAudienceSection({ campaignId }) {
         phoneField: phoneHeader || undefined,
         normalizePhones: !!valReq.normalizePhone,
         deduplicate: !!valReq.checkDuplicates,
-        persist: false, // <-- preview only
-        audienceName: undefined, // <-- not needed for preview
+        persist: false, // preview only
+        audienceName: undefined,
       };
 
       const preview = await materialize(campaignId, body);
@@ -202,7 +344,7 @@ export default function CsvAudienceSection({ campaignId }) {
 
     setPersisting(true);
     try {
-      await saveMappings(campaignId, buildMappingDict()); // optional
+      await saveMappings(campaignId, buildMappingDict());
 
       const body = {
         csvBatchId: batch.batchId,
@@ -210,19 +352,27 @@ export default function CsvAudienceSection({ campaignId }) {
         phoneField: phoneHeader || undefined,
         normalizePhones: !!valReq.normalizePhone,
         deduplicate: !!valReq.checkDuplicates,
-        persist: true, // <-- REQUIRED
+        persist: true,
         audienceName: audienceName.trim(),
       };
 
-      const result = await materialize(campaignId, body);
+      await materialize(campaignId, body);
       toast.success("Audience created and recipients materialized.");
-      // result.audienceId will be set on success
     } catch {
       toast.error("Persist failed.");
     } finally {
       setPersisting(false);
     }
   };
+
+  // Mapping status chip (for the collapsed panel)
+  const mappingStatus = useMemo(() => {
+    if (!expectedKeys?.length) return { label: "No params", ok: true };
+    const missing = expectedKeys.filter(k => !keyToColumn[k]);
+    return missing.length
+      ? { label: `${missing.length} missing`, ok: false }
+      : { label: "All mapped", ok: true };
+  }, [expectedKeys, keyToColumn]);
 
   if (loading) {
     return (
@@ -274,8 +424,9 @@ export default function CsvAudienceSection({ campaignId }) {
         </label>
       </div>
 
-      {/* Phone + toggles and parameter mapping */}
+      {/* Phone + toggles and collapsible mapping */}
       <div className="grid gap-3 md:grid-cols-2">
+        {/* Phone + toggles */}
         <div className="rounded-lg border p-3">
           <h3 className="mb-2 text-xs font-semibold text-gray-700">
             Phone column
@@ -322,39 +473,49 @@ export default function CsvAudienceSection({ campaignId }) {
           </div>
         </div>
 
+        {/* Collapsible mapping & validation */}
         <div className="rounded-lg border p-3">
-          <h3 className="mb-2 text-xs font-semibold text-gray-700">
-            Template parameters
-          </h3>
-          {paramMappings.length === 0 ? (
-            <p className="text-sm text-gray-500">
-              No parameters required for this template.
-            </p>
-          ) : (
-            <div className="space-y-2">
-              {paramMappings.map((m, i) => (
-                <div
-                  key={m.index}
-                  className="grid grid-cols-[80px,100px,1fr] items-center gap-2"
-                >
-                  <div className="text-xs text-gray-500">{`{{${m.index}}}`}</div>
-                  <select
-                    className="rounded-lg border px-2 py-1.5 text-xs outline-none focus:border-purple-500"
-                    value={m.sourceType}
-                    onChange={e =>
-                      updateMapping(i, { sourceType: e.target.value })
-                    }
-                  >
-                    <option value="csv">CSV column</option>
-                    <option value="const">Constant</option>
-                  </select>
+          <div className="flex items-center justify-between">
+            <h3 className="text-xs font-semibold text-gray-700">
+              Mapping & Validation
+            </h3>
+            <span
+              className={`rounded-full px-2 py-0.5 text-[11px] ${
+                mappingStatus.ok
+                  ? "bg-emerald-100 text-emerald-700"
+                  : "bg-amber-100 text-amber-700"
+              }`}
+            >
+              {mappingStatus.label}
+            </span>
+          </div>
 
-                  {m.sourceType === "csv" ? (
+          <button
+            type="button"
+            className="mt-2 text-xs text-indigo-600 hover:underline"
+            onClick={() => setShowMapping(s => !s)}
+            disabled={!(csvHeaders ?? []).length}
+          >
+            {showMapping ? "Hide mapping" : "Edit mapping"}
+          </button>
+
+          {showMapping && (
+            <div className="mt-3 space-y-2">
+              {/* Canonical keys (header/video/document/buttons) + body.* */}
+              {expectedKeys.length === 0 ? (
+                <p className="text-xs text-gray-500">No parameters required.</p>
+              ) : (
+                expectedKeys.map(k => (
+                  <div
+                    key={k}
+                    className="grid grid-cols-[160px,1fr] items-center gap-2"
+                  >
+                    <div className="text-[11px] text-gray-500">{k}</div>
                     <select
                       className="w-full rounded-lg border px-2 py-1.5 text-xs outline-none focus:border-purple-500"
-                      value={m.sourceName || ""}
+                      value={keyToColumn[k] || ""}
                       onChange={e =>
-                        updateMapping(i, { sourceName: e.target.value })
+                        setKeyToColumn(m => ({ ...m, [k]: e.target.value }))
                       }
                       disabled={!(csvHeaders ?? []).length}
                     >
@@ -369,18 +530,69 @@ export default function CsvAudienceSection({ campaignId }) {
                         </option>
                       ))}
                     </select>
-                  ) : (
-                    <input
-                      className="w-full rounded-lg border px-2 py-1.5 text-xs outline-none focus:border-purple-500"
-                      placeholder="Constant value"
-                      value={m.constValue || ""}
-                      onChange={e =>
-                        updateMapping(i, { constValue: e.target.value })
-                      }
-                    />
-                  )}
+                  </div>
+                ))
+              )}
+
+              {/* Legacy {{n}} UI (kept for now) */}
+              {paramMappings.length > 0 && (
+                <div className="mt-4 border-t pt-3">
+                  <div className="mb-2 text-xs font-semibold text-gray-700">
+                    Body placeholders (legacy)
+                  </div>
+                  <div className="space-y-2">
+                    {paramMappings.map((m, i) => (
+                      <div
+                        key={m.index}
+                        className="grid grid-cols-[80px,100px,1fr] items-center gap-2"
+                      >
+                        <div className="text-xs text-gray-500">{`{{${m.index}}}`}</div>
+                        <select
+                          className="rounded-lg border px-2 py-1.5 text-xs outline-none focus:border-purple-500"
+                          value={m.sourceType}
+                          onChange={e =>
+                            updateMapping(i, { sourceType: e.target.value })
+                          }
+                        >
+                          <option value="csv">CSV column</option>
+                          <option value="const">Constant</option>
+                        </select>
+
+                        {m.sourceType === "csv" ? (
+                          <select
+                            className="w-full rounded-lg border px-2 py-1.5 text-xs outline-none focus:border-purple-500"
+                            value={m.sourceName || ""}
+                            onChange={e =>
+                              updateMapping(i, { sourceName: e.target.value })
+                            }
+                            disabled={!(csvHeaders ?? []).length}
+                          >
+                            <option value="">
+                              {(csvHeaders ?? []).length
+                                ? "-- Select column --"
+                                : "Upload CSV"}
+                            </option>
+                            {(csvHeaders ?? []).map(h => (
+                              <option key={h} value={h}>
+                                {h}
+                              </option>
+                            ))}
+                          </select>
+                        ) : (
+                          <input
+                            className="w-full rounded-lg border px-2 py-1.5 text-xs outline-none focus:border-purple-500"
+                            placeholder="Constant value"
+                            value={m.constValue || ""}
+                            onChange={e =>
+                              updateMapping(i, { constValue: e.target.value })
+                            }
+                          />
+                        )}
+                      </div>
+                    ))}
+                  </div>
                 </div>
-              ))}
+              )}
             </div>
           )}
         </div>
@@ -481,6 +693,490 @@ export default function CsvAudienceSection({ campaignId }) {
     </section>
   );
 }
+
+// // src/pages/Campaigns/components/CsvAudienceSection.jsx
+// import React, { useEffect, useMemo, useRef, useState } from "react";
+// import { toast } from "react-toastify";
+// import {
+//   fetchCsvSchema,
+//   downloadCsvSampleBlob,
+//   uploadCsvBatch,
+//   getBatchSample,
+//   validateBatch,
+//   suggestMappings,
+//   saveMappings,
+//   materialize,
+// } from "../api/csvApi";
+
+// function saveBlob(blob, filename) {
+//   const url = window.URL.createObjectURL(blob);
+//   const a = document.createElement("a");
+//   a.href = url;
+//   a.download = filename;
+//   a.click();
+//   window.URL.revokeObjectURL(url);
+// }
+
+// export default function CsvAudienceSection({ campaignId }) {
+//   const [loading, setLoading] = useState(true);
+//   const [schema, setSchema] = useState(null);
+
+//   const [batch, setBatch] = useState(null); // { batchId, headerJson, ... }
+//   const [sample, setSample] = useState(null); // { headers, rows }
+//   const [valReq, setValReq] = useState({
+//     normalizePhone: true,
+//     checkDuplicates: true,
+//   });
+//   const [valRes, setValRes] = useState(null);
+
+//   const [paramMappings, setParamMappings] = useState([]);
+//   const [phoneHeader, setPhoneHeader] = useState("");
+//   const [audienceName, setAudienceName] = useState(() => {
+//     const d = new Date();
+//     const yyyy = d.getFullYear();
+//     const mm = String(d.getMonth() + 1).padStart(2, "0");
+//     const dd = String(d.getDate()).padStart(2, "0");
+//     return `Audience ${yyyy}-${mm}-${dd}`;
+//   });
+
+//   const [dryPreview, setDryPreview] = useState(null);
+//   const [persisting, setPersisting] = useState(false);
+
+//   const topRef = useRef(null);
+
+//   useEffect(() => {
+//     let alive = true;
+//     (async () => {
+//       try {
+//         setLoading(true);
+//         const sc = await fetchCsvSchema(campaignId);
+//         if (!alive) return;
+//         setSchema(sc);
+
+//         const N = Number(sc?.placeholderCount || 0);
+//         setParamMappings(
+//           Array.from({ length: N }, (_, i) => ({
+//             index: i + 1,
+//             sourceType: "csv",
+//             sourceName: "",
+//             constValue: "",
+//           }))
+//         );
+//       } catch {
+//         toast.error("Failed to load CSV schema.");
+//       } finally {
+//         if (alive) setLoading(false);
+//       }
+//     })();
+//     return () => {
+//       alive = false;
+//     };
+//   }, [campaignId]);
+
+//   const csvHeaders = useMemo(
+//     () => sample?.headers ?? batch?.headerJson ?? schema?.headers ?? [],
+//     [schema, batch, sample]
+//   );
+
+//   const updateMapping = (idx, patch) =>
+//     setParamMappings(prev => {
+//       const next = [...prev];
+//       next[idx] = { ...next[idx], ...patch };
+//       return next;
+//     });
+
+//   const handleDownloadSample = async () => {
+//     try {
+//       const blob = await downloadCsvSampleBlob(campaignId);
+//       saveBlob(blob, `campaign-${campaignId}-sample.csv`);
+//     } catch {
+//       toast.error("Could not download sample CSV.");
+//     }
+//   };
+
+//   const handleFile = async f => {
+//     if (!f) return;
+//     try {
+//       const up = await uploadCsvBatch(f, null);
+//       setBatch(up);
+//       toast.success("CSV uploaded.");
+
+//       const s = await getBatchSample(up?.batchId, 10);
+//       setSample(s);
+
+//       const hdrs = Array.isArray(s?.headers) ? s.headers : [];
+//       const lower = hdrs.map(h => String(h).toLowerCase());
+//       const guessIdx = lower.findIndex(h =>
+//         ["phone", "mobile", "whatsapp", "number", "phonee164"].some(k =>
+//           h.includes(k)
+//         )
+//       );
+//       setPhoneHeader(guessIdx >= 0 ? hdrs[guessIdx] : "");
+
+//       try {
+//         const sugg = await suggestMappings(campaignId, up?.batchId);
+//         if (Array.isArray(sugg?.items)) {
+//           setParamMappings(prev =>
+//             prev.map(p => {
+//               const m = sugg.items.find(x => x.index === p.index);
+//               return m ? { ...p, ...m } : p;
+//             })
+//           );
+//         }
+//       } catch {
+//         /* optional */
+//       }
+//     } catch (e) {
+//       toast.error(e?.message || "CSV upload failed.");
+//     }
+//   };
+
+//   const handleValidate = async () => {
+//     if (!batch?.batchId) return toast.warn("Upload a CSV first.");
+//     if (!phoneHeader) return toast.warn("Choose the phone column.");
+
+//     try {
+//       const req = {
+//         phoneHeader,
+//         requiredHeaders: [], // params may be constants
+//         normalizePhone: !!valReq.normalizePhone,
+//         checkDuplicates: !!valReq.checkDuplicates,
+//       };
+//       const res = await validateBatch(batch.batchId, req);
+//       setValRes(res);
+//       if (Array.isArray(res?.problems) && res.problems.length > 0) {
+//         toast.warn(`Validation found ${res.problems.length} issue(s).`);
+//       } else {
+//         toast.success("Validation passed.");
+//       }
+//     } catch {
+//       toast.error("Validation call failed.");
+//     }
+//   };
+
+//   // Dictionary the backend expects for mappings (eg { "{{1}}": "Nicolus", "{{2}}": "Email" }).
+//   const buildMappingDict = () => {
+//     const dict = {};
+//     for (const m of paramMappings) {
+//       const key = `{{${m.index}}}`;
+//       if (m.sourceType === "csv") {
+//         dict[key] = m.sourceName || "";
+//       } else {
+//         // IMPORTANT: backend expects "constant:" prefix
+//         dict[key] = `constant:${m.constValue ?? ""}`;
+//       }
+//     }
+//     return dict;
+//   };
+//   const handleDryRun = async () => {
+//     if (!batch?.batchId) return toast.warn("Upload a CSV first.");
+
+//     try {
+//       await saveMappings(campaignId, buildMappingDict()); // optional
+
+//       const body = {
+//         csvBatchId: batch.batchId,
+//         mappings: buildMappingDict(),
+//         phoneField: phoneHeader || undefined,
+//         normalizePhones: !!valReq.normalizePhone,
+//         deduplicate: !!valReq.checkDuplicates,
+//         persist: false, // <-- preview only
+//         audienceName: undefined, // <-- not needed for preview
+//       };
+
+//       const preview = await materialize(campaignId, body);
+//       setDryPreview(preview);
+//       toast.success("Dry-run ready.");
+//     } catch {
+//       toast.error("Dry-run failed.");
+//     }
+//   };
+
+//   const handlePersist = async () => {
+//     if (!batch?.batchId) return toast.warn("Upload a CSV first.");
+//     if (!audienceName?.trim()) return toast.warn("Enter an audience name.");
+
+//     setPersisting(true);
+//     try {
+//       await saveMappings(campaignId, buildMappingDict()); // optional
+
+//       const body = {
+//         csvBatchId: batch.batchId,
+//         mappings: buildMappingDict(),
+//         phoneField: phoneHeader || undefined,
+//         normalizePhones: !!valReq.normalizePhone,
+//         deduplicate: !!valReq.checkDuplicates,
+//         persist: true, // <-- REQUIRED
+//         audienceName: audienceName.trim(),
+//       };
+
+//       const result = await materialize(campaignId, body);
+//       toast.success("Audience created and recipients materialized.");
+//       // result.audienceId will be set on success
+//     } catch {
+//       toast.error("Persist failed.");
+//     } finally {
+//       setPersisting(false);
+//     }
+//   };
+
+//   if (loading) {
+//     return (
+//       <div className="rounded-lg border bg-white p-4 text-sm text-gray-500">
+//         Loading CSV schema…
+//       </div>
+//     );
+//   }
+
+//   return (
+//     <section ref={topRef} className="rounded-xl border bg-white p-4 shadow-sm">
+//       <h2 className="mb-3 text-sm font-semibold text-gray-800">
+//         Audience via CSV
+//       </h2>
+
+//       {/* Audience name */}
+//       <div className="mb-3">
+//         <input
+//           className="w-full rounded-lg border px-3 py-2 text-sm outline-none focus:border-purple-500"
+//           placeholder="Audience name (required to persist)"
+//           value={audienceName}
+//           onChange={e => setAudienceName(e.target.value)}
+//         />
+//       </div>
+
+//       {/* Header row: expected columns + actions */}
+//       <div className="mb-4 flex flex-wrap items-center gap-3 text-sm">
+//         <div className="text-gray-600">
+//           Expected columns:&nbsp;
+//           <code className="rounded bg-gray-100 px-1.5 py-0.5">
+//             {Array.isArray(schema?.headers) ? schema.headers.join(", ") : "—"}
+//           </code>
+//         </div>
+//         <button
+//           type="button"
+//           onClick={handleDownloadSample}
+//           className="rounded-md bg-indigo-600 px-3 py-1.5 text-xs font-semibold text-white hover:bg-indigo-700"
+//         >
+//           Download sample CSV
+//         </button>
+//         <label className="ml-auto cursor-pointer text-indigo-600 hover:underline">
+//           Upload CSV
+//           <input
+//             type="file"
+//             accept=".csv"
+//             onChange={e => handleFile(e.target.files?.[0])}
+//             className="hidden"
+//           />
+//         </label>
+//       </div>
+
+//       {/* Phone + toggles and parameter mapping */}
+//       <div className="grid gap-3 md:grid-cols-2">
+//         <div className="rounded-lg border p-3">
+//           <h3 className="mb-2 text-xs font-semibold text-gray-700">
+//             Phone column
+//           </h3>
+//           <select
+//             className="w-full rounded-lg border px-3 py-2 text-sm outline-none focus:border-purple-500"
+//             value={phoneHeader}
+//             onChange={e => setPhoneHeader(e.target.value)}
+//             disabled={!(csvHeaders ?? []).length}
+//           >
+//             <option value="">
+//               {(csvHeaders ?? []).length
+//                 ? "-- Select column --"
+//                 : "Upload a CSV first"}
+//             </option>
+//             {(csvHeaders ?? []).map(h => (
+//               <option key={h} value={h}>
+//                 {h}
+//               </option>
+//             ))}
+//           </select>
+
+//           <div className="mt-3 flex items-center gap-4 text-xs text-gray-700">
+//             <label className="inline-flex items-center gap-2">
+//               <input
+//                 type="checkbox"
+//                 checked={valReq.normalizePhone}
+//                 onChange={e =>
+//                   setValReq(v => ({ ...v, normalizePhone: e.target.checked }))
+//                 }
+//               />
+//               Normalize phone (E.164)
+//             </label>
+//             <label className="inline-flex items-center gap-2">
+//               <input
+//                 type="checkbox"
+//                 checked={valReq.checkDuplicates}
+//                 onChange={e =>
+//                   setValReq(v => ({ ...v, checkDuplicates: e.target.checked }))
+//                 }
+//               />
+//               Deduplicate by phone
+//             </label>
+//           </div>
+//         </div>
+
+//         <div className="rounded-lg border p-3">
+//           <h3 className="mb-2 text-xs font-semibold text-gray-700">
+//             Template parameters
+//           </h3>
+//           {paramMappings.length === 0 ? (
+//             <p className="text-sm text-gray-500">
+//               No parameters required for this template.
+//             </p>
+//           ) : (
+//             <div className="space-y-2">
+//               {paramMappings.map((m, i) => (
+//                 <div
+//                   key={m.index}
+//                   className="grid grid-cols-[80px,100px,1fr] items-center gap-2"
+//                 >
+//                   <div className="text-xs text-gray-500">{`{{${m.index}}}`}</div>
+//                   <select
+//                     className="rounded-lg border px-2 py-1.5 text-xs outline-none focus:border-purple-500"
+//                     value={m.sourceType}
+//                     onChange={e =>
+//                       updateMapping(i, { sourceType: e.target.value })
+//                     }
+//                   >
+//                     <option value="csv">CSV column</option>
+//                     <option value="const">Constant</option>
+//                   </select>
+
+//                   {m.sourceType === "csv" ? (
+//                     <select
+//                       className="w-full rounded-lg border px-2 py-1.5 text-xs outline-none focus:border-purple-500"
+//                       value={m.sourceName || ""}
+//                       onChange={e =>
+//                         updateMapping(i, { sourceName: e.target.value })
+//                       }
+//                       disabled={!(csvHeaders ?? []).length}
+//                     >
+//                       <option value="">
+//                         {(csvHeaders ?? []).length
+//                           ? "-- Select column --"
+//                           : "Upload CSV"}
+//                       </option>
+//                       {(csvHeaders ?? []).map(h => (
+//                         <option key={h} value={h}>
+//                           {h}
+//                         </option>
+//                       ))}
+//                     </select>
+//                   ) : (
+//                     <input
+//                       className="w-full rounded-lg border px-2 py-1.5 text-xs outline-none focus:border-purple-500"
+//                       placeholder="Constant value"
+//                       value={m.constValue || ""}
+//                       onChange={e =>
+//                         updateMapping(i, { constValue: e.target.value })
+//                       }
+//                     />
+//                   )}
+//                 </div>
+//               ))}
+//             </div>
+//           )}
+//         </div>
+//       </div>
+
+//       {/* Sample table */}
+//       <div className="mt-4 overflow-x-auto rounded-lg border">
+//         <table className="min-w-full text-xs">
+//           <thead className="bg-gray-100 text-gray-700">
+//             <tr>
+//               {(sample?.headers ?? csvHeaders ?? []).map(h => (
+//                 <th key={h} className="px-3 py-2 text-left">
+//                   {h}
+//                 </th>
+//               ))}
+//             </tr>
+//           </thead>
+//           <tbody>
+//             {Array.isArray(sample?.rows) && sample.rows.length > 0 ? (
+//               sample.rows.map((row, idx) => (
+//                 <tr key={idx} className="border-t">
+//                   {(sample?.headers ?? csvHeaders ?? []).map(h => (
+//                     <td key={h} className="px-3 py-1.5">
+//                       {row?.[h] ?? ""}
+//                     </td>
+//                   ))}
+//                 </tr>
+//               ))
+//             ) : (
+//               <tr>
+//                 <td
+//                   className="px-3 py-2 text-gray-400"
+//                   colSpan={(csvHeaders ?? []).length || 1}
+//                 >
+//                   No rows yet
+//                 </td>
+//               </tr>
+//             )}
+//           </tbody>
+//         </table>
+//       </div>
+
+//       {/* Actions */}
+//       <div className="mt-4 flex flex-wrap items-center gap-2">
+//         <button
+//           type="button"
+//           onClick={handleValidate}
+//           disabled={!batch?.batchId}
+//           className="rounded-md bg-gray-700 px-3 py-1.5 text-xs font-semibold text-white hover:bg-gray-800 disabled:opacity-50"
+//         >
+//           Validate
+//         </button>
+//         <button
+//           type="button"
+//           onClick={handleDryRun}
+//           disabled={!batch?.batchId}
+//           className="rounded-md bg-indigo-600 px-3 py-1.5 text-xs font-semibold text-white hover:bg-indigo-700 disabled:opacity-50"
+//         >
+//           (Preview) Dry-run materialize
+//         </button>
+//         <button
+//           type="button"
+//           onClick={handlePersist}
+//           disabled={!batch?.batchId || persisting || !audienceName?.trim()}
+//           className="rounded-md bg-green-600 px-3 py-1.5 text-xs font-semibold text-white hover:bg-green-700 disabled:opacity-50"
+//         >
+//           {persisting
+//             ? "Persisting…"
+//             : "Persist (create audience + recipients)"}
+//         </button>
+//       </div>
+
+//       {/* Validation result */}
+//       {valRes && (
+//         <div className="mt-3 rounded-lg border border-amber-200 bg-amber-50 p-3 text-xs text-amber-900">
+//           <div className="font-semibold">Validation</div>
+//           {Array.isArray(valRes.problems) && valRes.problems.length > 0 ? (
+//             <ul className="mt-1 list-disc pl-5">
+//               {valRes.problems.map((p, i) => (
+//                 <li key={i}>{p}</li>
+//               ))}
+//             </ul>
+//           ) : (
+//             <div className="mt-1 text-green-700">No problems found.</div>
+//           )}
+//         </div>
+//       )}
+
+//       {/* Dry-run preview */}
+//       {dryPreview && (
+//         <div className="mt-3 rounded-lg border border-sky-200 bg-sky-50 p-3 text-xs text-sky-900">
+//           <div className="font-semibold">Dry-run preview</div>
+//           <pre className="mt-1 overflow-x-auto rounded bg-white p-2 text-[11px] text-gray-800">
+//             {JSON.stringify(dryPreview, null, 2)}
+//           </pre>
+//         </div>
+//       )}
+//     </section>
+//   );
+// }
 
 // // src/pages/Campaigns/components/CsvAudienceSection.jsx
 // import React, { useEffect, useMemo, useRef, useState } from "react";

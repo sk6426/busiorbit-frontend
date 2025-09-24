@@ -10,8 +10,11 @@ import axiosClient from "../../api/axiosClient";
 import { toast } from "react-toastify";
 import Papa from "papaparse";
 import Modal from "react-modal";
-// ❌ removed: WhatsAppBubblePreview
 import TagFilterDropdown from "./components/TagFilterDropdown";
+
+// CSV campaign flow (schema → upload → map → validate → dry-run → commit)
+import CsvAudienceSection from "./components/CsvAudienceSection";
+import { fetchCsvSchema } from "./api/csvApi";
 
 if (typeof document !== "undefined" && process.env.NODE_ENV !== "test") {
   Modal.setAppElement("#root");
@@ -34,11 +37,16 @@ export default function AssignContactsPage() {
   const [saveToDb, setSaveToDb] = useState(true);
   const [selectedTagId, setSelectedTagId] = useState(null);
   const [allTags, setAllTags] = useState([]);
-  const [setIsImporting] = useState(false);
+
+  // was mistakenly `[setIsImporting] = useState(false)` before
+  const [isImporting, setIsImporting] = useState(false);
+
+  // we still fetch placeholder count to adapt helper text, but UI shows regardless
+  const [placeholderCount, setPlaceholderCount] = useState(0);
 
   const importedRef = useRef(null);
 
-  // ✅ Helper for consistent phone extraction
+  // Helper for consistent phone extraction
   function getPhone(contact) {
     return contact.phoneNumber || contact.phone || "";
   }
@@ -67,7 +75,15 @@ export default function AssignContactsPage() {
     try {
       const res = await axiosClient.get(`/campaign/${campaignId}`);
       setCampaign(res.data);
-      // console.log("Loaded campaign:", res.data);
+
+      // Fetch the CSV schema to know how many template params exist
+      try {
+        const sc = await fetchCsvSchema(campaignId); // { headers, placeholderCount, ... }
+        const n = Number(sc?.placeholderCount ?? 0);
+        setPlaceholderCount(isNaN(n) ? 0 : n);
+      } catch {
+        setPlaceholderCount(0);
+      }
     } catch (err) {
       console.error("Failed to load campaign:", err);
       toast.error("Failed to load campaign");
@@ -126,6 +142,7 @@ export default function AssignContactsPage() {
     );
   };
 
+  // ===== Existing local CSV → CRM import (kept as-is) =====
   const handleFileUpload = e => {
     const file = e.target.files[0];
     if (!file) return;
@@ -347,7 +364,39 @@ export default function AssignContactsPage() {
         )}
       </div>
 
-      {/* ❌ Preview removed */}
+      {/* === Campaign CSV flow (ALWAYS visible; phones-only works when N=0) === */}
+      {campaignId && (
+        <div className="mt-8 rounded-xl border bg-white p-4 shadow-sm">
+          <h2 className="mb-2 text-sm font-semibold text-gray-800">
+            Bulk Personalization via CSV
+            {placeholderCount > 0 && (
+              <>
+                {" "}
+                (Template has {placeholderCount} dynamic field
+                {placeholderCount > 1 ? "s" : ""})
+              </>
+            )}
+          </h2>
+          <p className="mb-3 text-xs text-gray-600">
+            Upload a CSV with at least a <code>phone</code> column
+            {placeholderCount > 0 && (
+              <>
+                {" "}
+                and values for <code>{"{{1}}"}</code>
+                {placeholderCount > 1 && (
+                  <>
+                    …<code>{`{{${placeholderCount}}}`}</code>
+                  </>
+                )}
+              </>
+            )}
+            , then validate, dry-run, and persist to create an Audience +
+            Recipients with idempotency. Your manual assignment flow above
+            remains available.
+          </p>
+          <CsvAudienceSection campaignId={campaignId} />
+        </div>
+      )}
 
       <div className="mt-6 flex justify-end">
         <button
@@ -433,14 +482,453 @@ export default function AssignContactsPage() {
           <button
             className="bg-purple-600 text-white px-4 py-2 rounded-md"
             onClick={applyFieldMapping}
+            disabled={isImporting}
           >
-            Import & Apply
+            {isImporting ? "Importing…" : "Import & Apply"}
           </button>
         </div>
       </Modal>
     </div>
   );
 }
+
+// import React, { useEffect, useRef, useState } from "react";
+// import { useParams } from "react-router-dom";
+// import axiosClient from "../../api/axiosClient";
+// import { toast } from "react-toastify";
+// import Papa from "papaparse";
+// import Modal from "react-modal";
+// // ❌ removed: WhatsAppBubblePreview
+// import TagFilterDropdown from "./components/TagFilterDropdown";
+
+// if (typeof document !== "undefined" && process.env.NODE_ENV !== "test") {
+//   Modal.setAppElement("#root");
+// }
+
+// export default function AssignContactsPage() {
+//   const { id: campaignId } = useParams();
+//   const [contacts, setContacts] = useState([]);
+//   const [filteredContacts, setFilteredContacts] = useState([]);
+//   const [selectedIds, setSelectedIds] = useState([]);
+//   const [search, setSearch] = useState("");
+//   const [tags, setTags] = useState([]);
+//   const [campaign, setCampaign] = useState(null);
+
+//   const [showFieldMapModal, setShowFieldMapModal] = useState(false);
+//   const [csvHeaders, setCsvHeaders] = useState([]);
+//   const [fieldMapping, setFieldMapping] = useState({ name: "", phone: "" });
+//   const [parsedCSV, setParsedCSV] = useState([]);
+//   const [importedCount, setImportedCount] = useState(0);
+//   const [saveToDb, setSaveToDb] = useState(true);
+//   const [selectedTagId, setSelectedTagId] = useState(null);
+//   const [allTags, setAllTags] = useState([]);
+//   const [setIsImporting] = useState(false);
+
+//   const importedRef = useRef(null);
+
+//   // ✅ Helper for consistent phone extraction
+//   function getPhone(contact) {
+//     return contact.phoneNumber || contact.phone || "";
+//   }
+
+//   useEffect(() => {
+//     loadCampaign();
+//     fetchAllTags();
+//     // eslint-disable-next-line
+//   }, [campaignId]);
+
+//   useEffect(() => {
+//     loadContacts();
+//     // eslint-disable-next-line
+//   }, [tags]);
+
+//   useEffect(() => {
+//     applySearchFilter();
+//     // eslint-disable-next-line
+//   }, [contacts, search]);
+
+//   const loadCampaign = async () => {
+//     if (!campaignId) {
+//       toast.error("No campaign ID found in URL.");
+//       return;
+//     }
+//     try {
+//       const res = await axiosClient.get(`/campaign/${campaignId}`);
+//       setCampaign(res.data);
+//       // console.log("Loaded campaign:", res.data);
+//     } catch (err) {
+//       console.error("Failed to load campaign:", err);
+//       toast.error("Failed to load campaign");
+//     }
+//   };
+
+//   const fetchAllTags = async () => {
+//     try {
+//       const res = await axiosClient.get("/tags/get-tags");
+//       const tags = res.data?.data || res.data || [];
+//       setAllTags(tags);
+//     } catch {
+//       toast.error("Failed to load tags");
+//     }
+//   };
+
+//   const loadContacts = async () => {
+//     try {
+//       let res;
+//       if (tags.length > 0) {
+//         res = await axiosClient.post("/contacts/filter-by-tags", tags);
+//         setContacts(res.data?.data || []);
+//       } else {
+//         res = await axiosClient.get("/contacts", {
+//           params: { tab: "all", page: 1, pageSize: 1000 },
+//         });
+//         setContacts(res.data?.data?.items || []);
+//       }
+//     } catch {
+//       toast.error("Failed to load contacts");
+//     }
+//   };
+
+//   const applySearchFilter = () => {
+//     const result = contacts.filter(
+//       c =>
+//         c.name?.toLowerCase().includes(search.toLowerCase()) ||
+//         getPhone(c).includes(search)
+//     );
+//     setFilteredContacts(result);
+//   };
+
+//   const toggleContact = id => {
+//     setSelectedIds(prev =>
+//       prev.includes(id) ? prev.filter(x => x !== id) : [...prev, id]
+//     );
+//   };
+
+//   const toggleSelectAll = () => {
+//     const filteredIds = filteredContacts.map(c => c.id);
+//     const allSelected = filteredIds.every(id => selectedIds.includes(id));
+//     setSelectedIds(prev =>
+//       allSelected
+//         ? prev.filter(id => !filteredIds.includes(id))
+//         : [...new Set([...prev, ...filteredIds])]
+//     );
+//   };
+
+//   const handleFileUpload = e => {
+//     const file = e.target.files[0];
+//     if (!file) return;
+
+//     Papa.parse(file, {
+//       header: true,
+//       skipEmptyLines: true,
+//       complete: function (results) {
+//         const headers = Object.keys(results.data[0] || {});
+//         setParsedCSV(results.data);
+//         setCsvHeaders(headers);
+//         setShowFieldMapModal(true);
+//       },
+//       error: function () {
+//         toast.error("CSV Parsing Failed");
+//       },
+//     });
+//   };
+
+//   useEffect(() => {
+//     if (csvHeaders.length > 0) {
+//       const suggestions = {
+//         name: ["name", "full name", "contact name"],
+//         phone: ["phone", "mobile", "number", "whatsapp"],
+//       };
+//       const bestMatch = fieldOptions =>
+//         csvHeaders.find(h =>
+//           fieldOptions.some(option =>
+//             h.toLowerCase().includes(option.toLowerCase())
+//           )
+//         ) || "";
+//       setFieldMapping({
+//         name: bestMatch(suggestions.name),
+//         phone: bestMatch(suggestions.phone),
+//       });
+//     }
+//   }, [csvHeaders]);
+
+//   const applyFieldMapping = async () => {
+//     const mapped = parsedCSV
+//       .filter(row => row[fieldMapping.name] && row[fieldMapping.phone])
+//       .map(row => ({
+//         id: crypto.randomUUID(),
+//         name: row[fieldMapping.name],
+//         phone: row[fieldMapping.phone],
+//         tags: selectedTagId
+//           ? [
+//               {
+//                 tagId: selectedTagId,
+//                 tagName: allTags.find(t => t.id === selectedTagId)?.name || "",
+//               },
+//             ]
+//           : [],
+//       }));
+
+//     setContacts(prev => [...prev, ...mapped]);
+//     setSelectedIds(prev => [...new Set([...prev, ...mapped.map(c => c.id)])]);
+//     setImportedCount(mapped.length);
+//     setShowFieldMapModal(false);
+//     toast.success(`${mapped.length} contacts imported.`);
+
+//     setTimeout(() => {
+//       if (importedRef.current) {
+//         importedRef.current.scrollIntoView({ behavior: "smooth" });
+//       }
+//     }, 200);
+
+//     if (saveToDb) {
+//       try {
+//         setIsImporting(true);
+//         await axiosClient.post("/contacts/bulk-import", mapped);
+//         toast.success("Contacts also saved to your CRM.");
+//       } catch {
+//         toast.error("Saving to CRM failed.");
+//       } finally {
+//         setIsImporting(false);
+//       }
+//     }
+//   };
+
+//   const assignContacts = async () => {
+//     if (!campaign || !campaign.id) {
+//       toast.error("Campaign not ready. Please try again.");
+//       return;
+//     }
+//     if (selectedIds.length === 0) {
+//       toast.warn("Please select at least one contact");
+//       return;
+//     }
+
+//     const validIds = selectedIds.filter(id =>
+//       contacts.find(c => c.id === id && getPhone(c).trim() !== "")
+//     );
+
+//     if (validIds.length === 0) {
+//       toast.warn("No selected contacts have valid phone numbers.");
+//       return;
+//     }
+
+//     try {
+//       const payload = { contactIds: validIds };
+//       await axiosClient.post(
+//         `/campaign/${campaign.id}/assign-contacts`,
+//         payload
+//       );
+//       toast.success("Contacts assigned to campaign");
+//     } catch (err) {
+//       const message =
+//         err.response?.data?.message ||
+//         "Something went wrong during assignment.";
+//       toast.error(message);
+//     }
+//   };
+
+//   const allVisibleSelected = filteredContacts.every(c =>
+//     selectedIds.includes(c.id)
+//   );
+
+//   return (
+//     <div className="max-w-7xl mx-auto px-4 py-6">
+//       <h1 className="text-2xl font-bold text-purple-600 mb-6 flex items-center gap-2">
+//         🎯 Assign Contacts to Campaign
+//       </h1>
+
+//       <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 mb-6">
+//         <input
+//           className="border p-2 rounded-md w-full sm:w-1/3"
+//           type="text"
+//           placeholder="Search by name or phone..."
+//           value={search}
+//           onChange={e => setSearch(e.target.value)}
+//         />
+//         <TagFilterDropdown
+//           selectedTags={tags}
+//           onChange={setTags}
+//           category="All"
+//         />
+//         <label className="cursor-pointer text-purple-600 hover:underline text-sm sm:ml-auto">
+//           + Upload CSV
+//           <input
+//             type="file"
+//             accept=".csv"
+//             onChange={handleFileUpload}
+//             className="hidden"
+//           />
+//         </label>
+//       </div>
+
+//       <div
+//         className="bg-white rounded-xl shadow-sm overflow-x-auto"
+//         ref={importedRef}
+//       >
+//         <table className="min-w-full text-sm">
+//           <thead className="bg-gray-100 text-gray-700">
+//             <tr>
+//               <th className="px-4 py-2 text-center">
+//                 <input
+//                   type="checkbox"
+//                   checked={allVisibleSelected}
+//                   onChange={toggleSelectAll}
+//                 />
+//               </th>
+//               <th className="px-4 py-2 text-left">Name</th>
+//               <th className="px-4 py-2 text-left">Phone</th>
+//               <th className="px-4 py-2 text-left">Tags</th>
+//               <th className="px-4 py-2 text-left">Status</th>
+//             </tr>
+//           </thead>
+//           <tbody>
+//             {filteredContacts.map(contact => (
+//               <tr key={contact.id} className="border-t hover:bg-gray-50">
+//                 <td className="px-4 py-2 text-center">
+//                   <input
+//                     type="checkbox"
+//                     checked={selectedIds.includes(contact.id)}
+//                     onChange={() => toggleContact(contact.id)}
+//                   />
+//                 </td>
+//                 <td className="px-4 py-2">{contact.name || "Unnamed"}</td>
+//                 <td className="px-4 py-2">{getPhone(contact) || "—"}</td>
+//                 <td className="px-4 py-2">
+//                   <div className="flex flex-wrap gap-1">
+//                     {(contact.tags || contact.contactTags || []).map(tag => (
+//                       <span
+//                         key={tag.tagId || tag.id}
+//                         className="px-2 py-0.5 text-xs rounded-full"
+//                         style={{
+//                           backgroundColor: tag.colorHex || "#E5E7EB",
+//                           color: "#000",
+//                         }}
+//                       >
+//                         {tag.tagName || tag.name}
+//                       </span>
+//                     ))}
+//                   </div>
+//                 </td>
+//                 <td className="px-4 py-2">
+//                   {getPhone(contact).trim() !== "" ? "✅ Valid" : "⚠️ No Phone"}
+//                 </td>
+//               </tr>
+//             ))}
+//           </tbody>
+//         </table>
+//       </div>
+
+//       <div className="flex flex-col sm:flex-row justify-between items-center mt-4 text-sm text-gray-600">
+//         <div>
+//           Selected: {selectedIds.length} / WhatsApp-ready:{" "}
+//           {
+//             filteredContacts.filter(
+//               c => selectedIds.includes(c.id) && getPhone(c).trim() !== ""
+//             ).length
+//           }
+//         </div>
+//         {importedCount > 0 && (
+//           <div className="text-green-600">
+//             ✔ Imported: {importedCount} contact(s)
+//           </div>
+//         )}
+//       </div>
+
+//       {/* ❌ Preview removed */}
+
+//       <div className="mt-6 flex justify-end">
+//         <button
+//           onClick={assignContacts}
+//           disabled={false}
+//           className="px-6 py-3 rounded-lg transition bg-purple-600 text-white hover:bg-purple-700"
+//         >
+//           Assign to Campaign
+//         </button>
+//       </div>
+
+//       <Modal
+//         isOpen={showFieldMapModal}
+//         onRequestClose={() => setShowFieldMapModal(false)}
+//         className="bg-white rounded-lg shadow-lg max-w-xl mx-auto mt-20 p-6"
+//         overlayClassName="fixed inset-0 bg-black bg-opacity-40 flex items-center justify-center z-50"
+//       >
+//         <h2 className="text-lg font-bold mb-4">🧩 Map CSV Fields</h2>
+//         <div className="space-y-4">
+//           {["name", "phone"].map(field => (
+//             <div key={field}>
+//               <label className="block text-sm font-medium mb-1 capitalize">
+//                 {field}
+//               </label>
+//               <select
+//                 className="border px-3 py-2 rounded w-full"
+//                 value={fieldMapping[field]}
+//                 onChange={e =>
+//                   setFieldMapping(prev => ({
+//                     ...prev,
+//                     [field]: e.target.value,
+//                   }))
+//                 }
+//               >
+//                 <option value="">-- Select CSV column --</option>
+//                 {csvHeaders.map(header => (
+//                   <option key={header} value={header}>
+//                     {header}
+//                   </option>
+//                 ))}
+//               </select>
+//             </div>
+//           ))}
+//           <div>
+//             <label className="block text-sm font-medium mb-1">
+//               Apply Tag to All
+//             </label>
+//             <select
+//               className="border px-3 py-2 rounded w-full"
+//               value={selectedTagId || ""}
+//               onChange={e => setSelectedTagId(e.target.value)}
+//             >
+//               <option value="">-- None --</option>
+//               {Array.isArray(allTags) &&
+//                 allTags.map(tag => (
+//                   <option key={tag.id} value={tag.id}>
+//                     {tag.name}
+//                   </option>
+//                 ))}
+//             </select>
+//           </div>
+//         </div>
+
+//         <div className="mt-4">
+//           <label className="inline-flex items-center">
+//             <input
+//               type="checkbox"
+//               className="mr-2"
+//               checked={saveToDb}
+//               onChange={e => setSaveToDb(e.target.checked)}
+//             />
+//             Also save these contacts to your CRM
+//           </label>
+//         </div>
+
+//         <div className="mt-6 flex justify-end gap-3">
+//           <button
+//             className="text-gray-600 hover:underline"
+//             onClick={() => setShowFieldMapModal(false)}
+//           >
+//             Cancel
+//           </button>
+//           <button
+//             className="bg-purple-600 text-white px-4 py-2 rounded-md"
+//             onClick={applyFieldMapping}
+//           >
+//             Import & Apply
+//           </button>
+//         </div>
+//       </Modal>
+//     </div>
+//   );
+// }
  
  
 ====================================================== 
@@ -852,9 +1340,9 @@ function CampaignBuilderPage() {
         <div className="space-y-4">
           {/* Campaign meta */}
           <section className="rounded-xl border bg-white p-4 shadow-sm">
-            <h2 className="mb-3 text-sm font-semibold text-gray-800">
+            {/* <h2 className="mb-3 text-sm font-semibold text-gray-800">
               Campaign details
-            </h2>
+            </h2> */}
             <div className="space-y-3 text-sm">
               <div>
                 <label className="mb-1 block font-medium text-gray-700">
@@ -3452,6 +3940,7 @@ export default CampaignRecipientsPage;
 FILE: D:\xbytechat\xbytechat-ui\src\pages\Campaigns\CampaignSendLogs.jsx 
 ====================================================== 
  
+// 📄 src/pages/campaigns/CampaignSendLogs.jsx
 import React, { useEffect, useState, useCallback } from "react";
 import { useParams, Link } from "react-router-dom";
 import axiosClient from "../../api/axiosClient";
@@ -3466,12 +3955,12 @@ import ContactJourneyModal from "./components/ContactJourneyModal";
 function CampaignSendLogs() {
   const { campaignId } = useParams();
 
-  // State for data returned from the server
+  // data
   const [logs, setLogs] = useState([]);
   const [summary, setSummary] = useState(null);
   const [loading, setLoading] = useState(true);
 
-  // State for server-side filtering and pagination
+  // filters/paging
   const [search, setSearch] = useState("");
   const [statusFilter, setStatusFilter] = useState("");
   const [page, setPage] = useState(1);
@@ -3479,30 +3968,35 @@ function CampaignSendLogs() {
   const [totalPages, setTotalPages] = useState(0);
   const [totalLogs, setTotalLogs] = useState(0);
 
-  // State for modals
+  // modals
   const [previewOpen, setPreviewOpen] = useState(false);
   const [selectedLog, setSelectedLog] = useState(null);
   const [isJourneyOpen, setIsJourneyOpen] = useState(false);
   const [journeyLog, setJourneyLog] = useState(null);
 
-  // --- DATA FETCHING ---
+  // --- helpers ---
+  // Prefer contactPhone when it's a real value; otherwise fall back to recipientNumber / to.
+  const getDisplayPhone = log => {
+    const clean = v => (typeof v === "string" ? v.trim() : v);
+    const p = clean(log?.contactPhone);
+    if (p && p !== "-" && p.toLowerCase() !== "n/a") return p;
+    const r = clean(log?.recipientNumber) || clean(log?.to);
+    return r || ""; // empty if truly unavailable
+  };
 
+  // --- fetching ---
   const fetchLogs = useCallback(async () => {
     setLoading(true);
     try {
-      // Construct URL with query parameters for server-side processing
       const params = new URLSearchParams({
         page,
         pageSize,
         status: statusFilter,
         search,
       });
-
       const res = await axiosClient.get(
         `/campaign-logs/campaign/${campaignId}?${params.toString()}`
       );
-
-      // The API now returns a paged result object
       setLogs(res.data.items || []);
       setTotalLogs(res.data.totalCount || 0);
       setTotalPages(res.data.totalPages || 0);
@@ -3518,50 +4012,34 @@ function CampaignSendLogs() {
       const res = await axiosClient.get(
         `/campaign-logs/campaign/${campaignId}/summary`
       );
-      // Ensure you are accessing the correct property from your ResponseResult
       setSummary(res.data.data || res.data);
     } catch {
       console.error("❌ Failed to fetch summary");
     }
   }, [campaignId]);
 
-  // This effect triggers an API call whenever a filter or page changes
   useEffect(() => {
-    // A small debounce to prevent API calls on every keystroke for search
-    const handler = setTimeout(() => {
-      fetchLogs();
-    }, 500); // 500ms delay
-
-    return () => {
-      clearTimeout(handler);
-    };
+    const t = setTimeout(fetchLogs, 500);
+    return () => clearTimeout(t);
   }, [fetchLogs]);
 
-  // This effect fetches the summary only once when the component loads
   useEffect(() => {
     fetchSummary();
   }, [fetchSummary]);
 
-  // NOTE: The old client-side filtering useEffect has been removed.
-
-  // --- EVENT HANDLERS ---
-
+  // --- handlers ---
   const handleStatusChange = e => {
     setStatusFilter(e.target.value);
-    setPage(1); // Reset to the first page when a filter changes
+    setPage(1);
   };
-
   const handleSearchChange = e => {
     setSearch(e.target.value);
-    setPage(1); // Reset to the first page when search text changes
+    setPage(1);
   };
 
   const handleExport = () => {
-    // This function would also need to be updated to fetch ALL logs for export
-    // For now, it exports the current page.
     const headers = [
-      "Contact Name",
-      "Phone",
+      "Contact Phone",
       "Status",
       "Channel",
       "Sent At",
@@ -3573,15 +4051,14 @@ function CampaignSendLogs() {
     const csvRows = [
       headers,
       ...logs.map(log => [
-        log.contactName,
-        log.contactPhone,
+        getDisplayPhone(log), // ✅ phone only
         log.sendStatus,
         log.sourceChannel,
-        log.sentAt ? new Date(log.sentAt).toLocaleString() : "-",
-        log.deliveredAt ? new Date(log.deliveredAt).toLocaleString() : "-",
-        log.readAt ? new Date(log.readAt).toLocaleString() : "-",
+        log.sentAt ? new Date(log.sentAt).toLocaleString() : "",
+        log.deliveredAt ? new Date(log.deliveredAt).toLocaleString() : "",
+        log.readAt ? new Date(log.readAt).toLocaleString() : "",
         log.isClicked ? "Yes" : "No",
-        log.clickType || "-",
+        log.clickType || "",
       ]),
     ];
     const blob = new Blob([csvRows.map(r => r.join(",")).join("\n")], {
@@ -3601,7 +4078,7 @@ function CampaignSendLogs() {
             try {
               await axiosClient.post(`/campaign-logs/${logId}/retry`);
               toast.success("✅ Retry triggered");
-              fetchLogs(); // Re-fetch data to show updated status
+              fetchLogs();
               fetchSummary();
             } catch {
               toast.error("❌ Retry failed");
@@ -3627,7 +4104,7 @@ function CampaignSendLogs() {
                 `/campaign-logs/campaign/${campaignId}/retry-all`
               );
               toast.success(`✅ Retried ${res.data.retried} messages`);
-              fetchLogs(); // Re-fetch data
+              fetchLogs();
               fetchSummary();
             } catch {
               toast.error("❌ Retry failed");
@@ -3648,6 +4125,7 @@ function CampaignSendLogs() {
     setSelectedLog(null);
   };
 
+  // --- render ---
   return (
     <div className="p-6 bg-gray-50 min-h-screen">
       <div className="flex justify-between items-center mb-4">
@@ -3682,7 +4160,6 @@ function CampaignSendLogs() {
           <option value="Queued">Queued</option>
           <option value="Failed">Failed</option>
         </select>
-        {/* You can add back the other filters here following the same pattern */}
       </div>
 
       <div className="mb-4 flex justify-between">
@@ -3727,7 +4204,8 @@ function CampaignSendLogs() {
               {logs.map(log => (
                 <tr key={log.id} className="border-t hover:bg-gray-50">
                   <td className="p-2">
-                    {log.contactName} ({log.contactPhone})
+                    {/* ✅ phone only – no N/A, no parentheses */}
+                    {getDisplayPhone(log) || "-"}
                   </td>
                   <td className="p-2">{log.sendStatus || "-"}</td>
                   <td className="p-2">{log.sourceChannel || "-"}</td>
@@ -3805,6 +4283,360 @@ function CampaignSendLogs() {
 }
 
 export default CampaignSendLogs;
+
+// import React, { useEffect, useState, useCallback } from "react";
+// import { useParams, Link } from "react-router-dom";
+// import axiosClient from "../../api/axiosClient";
+// import { toast } from "react-toastify";
+// import { saveAs } from "file-saver";
+// import { confirmAlert } from "react-confirm-alert";
+// import "react-confirm-alert/src/react-confirm-alert.css";
+// import MessagePreviewModal from "./components/MessagePreviewModal";
+// import CampaignSummaryBar from "./components/CampaignSummaryBar";
+// import ContactJourneyModal from "./components/ContactJourneyModal";
+
+// function CampaignSendLogs() {
+//   const { campaignId } = useParams();
+
+//   // State for data returned from the server
+//   const [logs, setLogs] = useState([]);
+//   const [summary, setSummary] = useState(null);
+//   const [loading, setLoading] = useState(true);
+
+//   // State for server-side filtering and pagination
+//   const [search, setSearch] = useState("");
+//   const [statusFilter, setStatusFilter] = useState("");
+//   const [page, setPage] = useState(1);
+//   const [pageSize] = useState(10);
+//   const [totalPages, setTotalPages] = useState(0);
+//   const [totalLogs, setTotalLogs] = useState(0);
+
+//   // State for modals
+//   const [previewOpen, setPreviewOpen] = useState(false);
+//   const [selectedLog, setSelectedLog] = useState(null);
+//   const [isJourneyOpen, setIsJourneyOpen] = useState(false);
+//   const [journeyLog, setJourneyLog] = useState(null);
+
+//   // --- DATA FETCHING ---
+
+//   const fetchLogs = useCallback(async () => {
+//     setLoading(true);
+//     try {
+//       // Construct URL with query parameters for server-side processing
+//       const params = new URLSearchParams({
+//         page,
+//         pageSize,
+//         status: statusFilter,
+//         search,
+//       });
+
+//       const res = await axiosClient.get(
+//         `/campaign-logs/campaign/${campaignId}?${params.toString()}`
+//       );
+
+//       // The API now returns a paged result object
+//       setLogs(res.data.items || []);
+//       setTotalLogs(res.data.totalCount || 0);
+//       setTotalPages(res.data.totalPages || 0);
+//     } catch {
+//       toast.error("❌ Failed to load send logs");
+//     } finally {
+//       setLoading(false);
+//     }
+//   }, [campaignId, page, pageSize, statusFilter, search]);
+
+//   const fetchSummary = useCallback(async () => {
+//     try {
+//       const res = await axiosClient.get(
+//         `/campaign-logs/campaign/${campaignId}/summary`
+//       );
+//       // Ensure you are accessing the correct property from your ResponseResult
+//       setSummary(res.data.data || res.data);
+//     } catch {
+//       console.error("❌ Failed to fetch summary");
+//     }
+//   }, [campaignId]);
+
+//   // This effect triggers an API call whenever a filter or page changes
+//   useEffect(() => {
+//     // A small debounce to prevent API calls on every keystroke for search
+//     const handler = setTimeout(() => {
+//       fetchLogs();
+//     }, 500); // 500ms delay
+
+//     return () => {
+//       clearTimeout(handler);
+//     };
+//   }, [fetchLogs]);
+
+//   // This effect fetches the summary only once when the component loads
+//   useEffect(() => {
+//     fetchSummary();
+//   }, [fetchSummary]);
+
+//   // NOTE: The old client-side filtering useEffect has been removed.
+
+//   // --- EVENT HANDLERS ---
+
+//   const handleStatusChange = e => {
+//     setStatusFilter(e.target.value);
+//     setPage(1); // Reset to the first page when a filter changes
+//   };
+
+//   const handleSearchChange = e => {
+//     setSearch(e.target.value);
+//     setPage(1); // Reset to the first page when search text changes
+//   };
+
+//   const handleExport = () => {
+//     // This function would also need to be updated to fetch ALL logs for export
+//     // For now, it exports the current page.
+//     const headers = [
+//       "Contact Name",
+//       "Phone",
+//       "Status",
+//       "Channel",
+//       "Sent At",
+//       "Delivered",
+//       "Read",
+//       "Clicked",
+//       "Click Type",
+//     ];
+//     const csvRows = [
+//       headers,
+//       ...logs.map(log => [
+//         log.contactName,
+//         log.contactPhone,
+//         log.sendStatus,
+//         log.sourceChannel,
+//         log.sentAt ? new Date(log.sentAt).toLocaleString() : "-",
+//         log.deliveredAt ? new Date(log.deliveredAt).toLocaleString() : "-",
+//         log.readAt ? new Date(log.readAt).toLocaleString() : "-",
+//         log.isClicked ? "Yes" : "No",
+//         log.clickType || "-",
+//       ]),
+//     ];
+//     const blob = new Blob([csvRows.map(r => r.join(",")).join("\n")], {
+//       type: "text/csv",
+//     });
+//     saveAs(blob, `CampaignLogs-${campaignId}.csv`);
+//   };
+
+//   const handleRetrySingle = logId => {
+//     confirmAlert({
+//       title: "Retry This Message?",
+//       message: "Are you sure you want to retry this failed message?",
+//       buttons: [
+//         {
+//           label: "Yes",
+//           onClick: async () => {
+//             try {
+//               await axiosClient.post(`/campaign-logs/${logId}/retry`);
+//               toast.success("✅ Retry triggered");
+//               fetchLogs(); // Re-fetch data to show updated status
+//               fetchSummary();
+//             } catch {
+//               toast.error("❌ Retry failed");
+//             }
+//           },
+//         },
+//         { label: "Cancel" },
+//       ],
+//     });
+//   };
+
+//   const handleRetryAll = () => {
+//     confirmAlert({
+//       title: "Retry All Failed Messages?",
+//       message:
+//         "This will retry all failed messages in this campaign. Continue?",
+//       buttons: [
+//         {
+//           label: "Yes",
+//           onClick: async () => {
+//             try {
+//               const res = await axiosClient.post(
+//                 `/campaign-logs/campaign/${campaignId}/retry-all`
+//               );
+//               toast.success(`✅ Retried ${res.data.retried} messages`);
+//               fetchLogs(); // Re-fetch data
+//               fetchSummary();
+//             } catch {
+//               toast.error("❌ Retry failed");
+//             }
+//           },
+//         },
+//         { label: "Cancel" },
+//       ],
+//     });
+//   };
+
+//   const openPreview = log => {
+//     setSelectedLog(log);
+//     setPreviewOpen(true);
+//   };
+//   const closePreview = () => {
+//     setPreviewOpen(false);
+//     setSelectedLog(null);
+//   };
+
+//   return (
+//     <div className="p-6 bg-gray-50 min-h-screen">
+//       <div className="flex justify-between items-center mb-4">
+//         <h1 className="text-2xl font-bold text-purple-700">
+//           📨 Send Logs for Campaign
+//         </h1>
+//         <Link
+//           to="/app/campaigns/template-campaigns-list"
+//           className="inline-flex items-center gap-2 rounded-lg border px-3 py-1.5 text-sm text-gray-700 hover:bg-gray-50 transition"
+//         >
+//           <span className="text-lg">←</span> Back to Campaigns
+//         </Link>
+//       </div>
+
+//       <CampaignSummaryBar summary={summary} />
+
+//       <div className="grid md:grid-cols-4 gap-4 mb-4">
+//         <input
+//           className="border px-3 py-2 rounded"
+//           placeholder="🔍 Search by name or phone"
+//           onChange={handleSearchChange}
+//         />
+//         <select
+//           className="border px-3 py-2 rounded"
+//           value={statusFilter}
+//           onChange={handleStatusChange}
+//         >
+//           <option value="">All Statuses</option>
+//           <option value="Sent">Sent</option>
+//           <option value="Delivered">Delivered</option>
+//           <option value="Read">Read</option>
+//           <option value="Queued">Queued</option>
+//           <option value="Failed">Failed</option>
+//         </select>
+//         {/* You can add back the other filters here following the same pattern */}
+//       </div>
+
+//       <div className="mb-4 flex justify-between">
+//         <p className="text-sm text-gray-500">
+//           Showing {logs.length} of {totalLogs} logs
+//         </p>
+//         <div className="space-x-2">
+//           <button
+//             onClick={handleExport}
+//             className="bg-emerald-600 text-white text-sm px-3 py-1 rounded hover:bg-emerald-700"
+//           >
+//             ⬇ Export CSV
+//           </button>
+//           <button
+//             onClick={handleRetryAll}
+//             className="bg-purple-600 text-white text-sm px-3 py-1 rounded hover:bg-purple-700"
+//           >
+//             🔁 Retry All Failed
+//           </button>
+//         </div>
+//       </div>
+
+//       {loading ? (
+//         <p>Loading logs...</p>
+//       ) : logs.length === 0 ? (
+//         <p className="text-gray-500">No logs found with current filters.</p>
+//       ) : (
+//         <div className="overflow-x-auto bg-white shadow rounded">
+//           <table className="w-full text-sm">
+//             <thead className="bg-gray-100 text-left">
+//               <tr>
+//                 <th className="p-2">Contact</th>
+//                 <th className="p-2">Status</th>
+//                 <th className="p-2">Channel</th>
+//                 <th className="p-2">Sent</th>
+//                 <th className="p-2">Clicked</th>
+//                 <th className="p-2">Click Type</th>
+//                 <th className="p-2">Actions</th>
+//               </tr>
+//             </thead>
+//             <tbody>
+//               {logs.map(log => (
+//                 <tr key={log.id} className="border-t hover:bg-gray-50">
+//                   <td className="p-2">
+//                     {log.contactName} ({log.contactPhone})
+//                   </td>
+//                   <td className="p-2">{log.sendStatus || "-"}</td>
+//                   <td className="p-2">{log.sourceChannel || "-"}</td>
+//                   <td className="p-2">
+//                     {log.sentAt ? new Date(log.sentAt).toLocaleString() : "-"}
+//                   </td>
+//                   <td className="p-2">{log.isClicked ? "✅ Yes" : "❌ No"}</td>
+//                   <td className="p-2">{log.clickType || "-"}</td>
+//                   <td className="p-2 space-x-2">
+//                     <button
+//                       onClick={() => openPreview(log)}
+//                       className="text-xs text-blue-600 hover:underline"
+//                     >
+//                       Preview
+//                     </button>
+//                     <button
+//                       onClick={() => {
+//                         setJourneyLog(log);
+//                         setIsJourneyOpen(true);
+//                       }}
+//                       className="text-xs text-indigo-600 hover:underline"
+//                     >
+//                       🧭 Journey
+//                     </button>
+//                     {log.sendStatus === "Failed" && (
+//                       <button
+//                         onClick={() => handleRetrySingle(log.id)}
+//                         className="text-xs text-white bg-red-500 hover:bg-red-600 px-2 py-1 rounded"
+//                       >
+//                         Retry
+//                       </button>
+//                     )}
+//                   </td>
+//                 </tr>
+//               ))}
+//             </tbody>
+//           </table>
+//         </div>
+//       )}
+
+//       {totalPages > 1 && (
+//         <div className="flex justify-end items-center mt-4 space-x-2">
+//           <button
+//             className="px-2 py-1 text-sm border rounded"
+//             disabled={page === 1}
+//             onClick={() => setPage(p => p - 1)}
+//           >
+//             ⬅ Prev
+//           </button>
+//           <span className="text-sm text-gray-600">
+//             Page {page} of {totalPages}
+//           </span>
+//           <button
+//             className="px-2 py-1 text-sm border rounded"
+//             disabled={page === totalPages}
+//             onClick={() => setPage(p => p + 1)}
+//           >
+//             Next ➡
+//           </button>
+//         </div>
+//       )}
+
+//       <MessagePreviewModal
+//         isOpen={previewOpen}
+//         onClose={closePreview}
+//         messageLog={selectedLog}
+//       />
+//       <ContactJourneyModal
+//         isOpen={isJourneyOpen}
+//         onClose={() => setIsJourneyOpen(false)}
+//         log={journeyLog}
+//       />
+//     </div>
+//   );
+// }
+
+// export default CampaignSendLogs;
  
  
 ====================================================== 
@@ -3823,8 +4655,11 @@ import axiosClient from "../../api/axiosClient";
 import { toast } from "react-toastify";
 import Papa from "papaparse";
 import Modal from "react-modal";
-// ❌ removed: WhatsAppBubblePreview
 import TagFilterDropdown from "./components/TagFilterDropdown";
+
+// CSV campaign flow (schema → upload → map → validate → dry-run → commit)
+import CsvAudienceSection from "./components/CsvAudienceSection";
+import { fetchCsvSchema } from "./api/csvApi";
 
 if (typeof document !== "undefined" && process.env.NODE_ENV !== "test") {
   Modal.setAppElement("#root");
@@ -3847,11 +4682,16 @@ export default function AssignContactsPage() {
   const [saveToDb, setSaveToDb] = useState(true);
   const [selectedTagId, setSelectedTagId] = useState(null);
   const [allTags, setAllTags] = useState([]);
-  const [setIsImporting] = useState(false);
+
+  // was mistakenly `[setIsImporting] = useState(false)` before
+  const [isImporting, setIsImporting] = useState(false);
+
+  // we still fetch placeholder count to adapt helper text, but UI shows regardless
+  const [placeholderCount, setPlaceholderCount] = useState(0);
 
   const importedRef = useRef(null);
 
-  // ✅ Helper for consistent phone extraction
+  // Helper for consistent phone extraction
   function getPhone(contact) {
     return contact.phoneNumber || contact.phone || "";
   }
@@ -3880,7 +4720,15 @@ export default function AssignContactsPage() {
     try {
       const res = await axiosClient.get(`/campaign/${campaignId}`);
       setCampaign(res.data);
-      // console.log("Loaded campaign:", res.data);
+
+      // Fetch the CSV schema to know how many template params exist
+      try {
+        const sc = await fetchCsvSchema(campaignId); // { headers, placeholderCount, ... }
+        const n = Number(sc?.placeholderCount ?? 0);
+        setPlaceholderCount(isNaN(n) ? 0 : n);
+      } catch {
+        setPlaceholderCount(0);
+      }
     } catch (err) {
       console.error("Failed to load campaign:", err);
       toast.error("Failed to load campaign");
@@ -3939,6 +4787,7 @@ export default function AssignContactsPage() {
     );
   };
 
+  // ===== Existing local CSV → CRM import (kept as-is) =====
   const handleFileUpload = e => {
     const file = e.target.files[0];
     if (!file) return;
@@ -4160,7 +5009,39 @@ export default function AssignContactsPage() {
         )}
       </div>
 
-      {/* ❌ Preview removed */}
+      {/* === Campaign CSV flow (ALWAYS visible; phones-only works when N=0) === */}
+      {campaignId && (
+        <div className="mt-8 rounded-xl border bg-white p-4 shadow-sm">
+          <h2 className="mb-2 text-sm font-semibold text-gray-800">
+            Bulk Personalization via CSV
+            {placeholderCount > 0 && (
+              <>
+                {" "}
+                (Template has {placeholderCount} dynamic field
+                {placeholderCount > 1 ? "s" : ""})
+              </>
+            )}
+          </h2>
+          <p className="mb-3 text-xs text-gray-600">
+            Upload a CSV with at least a <code>phone</code> column
+            {placeholderCount > 0 && (
+              <>
+                {" "}
+                and values for <code>{"{{1}}"}</code>
+                {placeholderCount > 1 && (
+                  <>
+                    …<code>{`{{${placeholderCount}}}`}</code>
+                  </>
+                )}
+              </>
+            )}
+            , then validate, dry-run, and persist to create an Audience +
+            Recipients with idempotency. Your manual assignment flow above
+            remains available.
+          </p>
+          <CsvAudienceSection campaignId={campaignId} />
+        </div>
+      )}
 
       <div className="mt-6 flex justify-end">
         <button
@@ -4246,14 +5127,453 @@ export default function AssignContactsPage() {
           <button
             className="bg-purple-600 text-white px-4 py-2 rounded-md"
             onClick={applyFieldMapping}
+            disabled={isImporting}
           >
-            Import & Apply
+            {isImporting ? "Importing…" : "Import & Apply"}
           </button>
         </div>
       </Modal>
     </div>
   );
 }
+
+// import React, { useEffect, useRef, useState } from "react";
+// import { useParams } from "react-router-dom";
+// import axiosClient from "../../api/axiosClient";
+// import { toast } from "react-toastify";
+// import Papa from "papaparse";
+// import Modal from "react-modal";
+// // ❌ removed: WhatsAppBubblePreview
+// import TagFilterDropdown from "./components/TagFilterDropdown";
+
+// if (typeof document !== "undefined" && process.env.NODE_ENV !== "test") {
+//   Modal.setAppElement("#root");
+// }
+
+// export default function AssignContactsPage() {
+//   const { id: campaignId } = useParams();
+//   const [contacts, setContacts] = useState([]);
+//   const [filteredContacts, setFilteredContacts] = useState([]);
+//   const [selectedIds, setSelectedIds] = useState([]);
+//   const [search, setSearch] = useState("");
+//   const [tags, setTags] = useState([]);
+//   const [campaign, setCampaign] = useState(null);
+
+//   const [showFieldMapModal, setShowFieldMapModal] = useState(false);
+//   const [csvHeaders, setCsvHeaders] = useState([]);
+//   const [fieldMapping, setFieldMapping] = useState({ name: "", phone: "" });
+//   const [parsedCSV, setParsedCSV] = useState([]);
+//   const [importedCount, setImportedCount] = useState(0);
+//   const [saveToDb, setSaveToDb] = useState(true);
+//   const [selectedTagId, setSelectedTagId] = useState(null);
+//   const [allTags, setAllTags] = useState([]);
+//   const [setIsImporting] = useState(false);
+
+//   const importedRef = useRef(null);
+
+//   // ✅ Helper for consistent phone extraction
+//   function getPhone(contact) {
+//     return contact.phoneNumber || contact.phone || "";
+//   }
+
+//   useEffect(() => {
+//     loadCampaign();
+//     fetchAllTags();
+//     // eslint-disable-next-line
+//   }, [campaignId]);
+
+//   useEffect(() => {
+//     loadContacts();
+//     // eslint-disable-next-line
+//   }, [tags]);
+
+//   useEffect(() => {
+//     applySearchFilter();
+//     // eslint-disable-next-line
+//   }, [contacts, search]);
+
+//   const loadCampaign = async () => {
+//     if (!campaignId) {
+//       toast.error("No campaign ID found in URL.");
+//       return;
+//     }
+//     try {
+//       const res = await axiosClient.get(`/campaign/${campaignId}`);
+//       setCampaign(res.data);
+//       // console.log("Loaded campaign:", res.data);
+//     } catch (err) {
+//       console.error("Failed to load campaign:", err);
+//       toast.error("Failed to load campaign");
+//     }
+//   };
+
+//   const fetchAllTags = async () => {
+//     try {
+//       const res = await axiosClient.get("/tags/get-tags");
+//       const tags = res.data?.data || res.data || [];
+//       setAllTags(tags);
+//     } catch {
+//       toast.error("Failed to load tags");
+//     }
+//   };
+
+//   const loadContacts = async () => {
+//     try {
+//       let res;
+//       if (tags.length > 0) {
+//         res = await axiosClient.post("/contacts/filter-by-tags", tags);
+//         setContacts(res.data?.data || []);
+//       } else {
+//         res = await axiosClient.get("/contacts", {
+//           params: { tab: "all", page: 1, pageSize: 1000 },
+//         });
+//         setContacts(res.data?.data?.items || []);
+//       }
+//     } catch {
+//       toast.error("Failed to load contacts");
+//     }
+//   };
+
+//   const applySearchFilter = () => {
+//     const result = contacts.filter(
+//       c =>
+//         c.name?.toLowerCase().includes(search.toLowerCase()) ||
+//         getPhone(c).includes(search)
+//     );
+//     setFilteredContacts(result);
+//   };
+
+//   const toggleContact = id => {
+//     setSelectedIds(prev =>
+//       prev.includes(id) ? prev.filter(x => x !== id) : [...prev, id]
+//     );
+//   };
+
+//   const toggleSelectAll = () => {
+//     const filteredIds = filteredContacts.map(c => c.id);
+//     const allSelected = filteredIds.every(id => selectedIds.includes(id));
+//     setSelectedIds(prev =>
+//       allSelected
+//         ? prev.filter(id => !filteredIds.includes(id))
+//         : [...new Set([...prev, ...filteredIds])]
+//     );
+//   };
+
+//   const handleFileUpload = e => {
+//     const file = e.target.files[0];
+//     if (!file) return;
+
+//     Papa.parse(file, {
+//       header: true,
+//       skipEmptyLines: true,
+//       complete: function (results) {
+//         const headers = Object.keys(results.data[0] || {});
+//         setParsedCSV(results.data);
+//         setCsvHeaders(headers);
+//         setShowFieldMapModal(true);
+//       },
+//       error: function () {
+//         toast.error("CSV Parsing Failed");
+//       },
+//     });
+//   };
+
+//   useEffect(() => {
+//     if (csvHeaders.length > 0) {
+//       const suggestions = {
+//         name: ["name", "full name", "contact name"],
+//         phone: ["phone", "mobile", "number", "whatsapp"],
+//       };
+//       const bestMatch = fieldOptions =>
+//         csvHeaders.find(h =>
+//           fieldOptions.some(option =>
+//             h.toLowerCase().includes(option.toLowerCase())
+//           )
+//         ) || "";
+//       setFieldMapping({
+//         name: bestMatch(suggestions.name),
+//         phone: bestMatch(suggestions.phone),
+//       });
+//     }
+//   }, [csvHeaders]);
+
+//   const applyFieldMapping = async () => {
+//     const mapped = parsedCSV
+//       .filter(row => row[fieldMapping.name] && row[fieldMapping.phone])
+//       .map(row => ({
+//         id: crypto.randomUUID(),
+//         name: row[fieldMapping.name],
+//         phone: row[fieldMapping.phone],
+//         tags: selectedTagId
+//           ? [
+//               {
+//                 tagId: selectedTagId,
+//                 tagName: allTags.find(t => t.id === selectedTagId)?.name || "",
+//               },
+//             ]
+//           : [],
+//       }));
+
+//     setContacts(prev => [...prev, ...mapped]);
+//     setSelectedIds(prev => [...new Set([...prev, ...mapped.map(c => c.id)])]);
+//     setImportedCount(mapped.length);
+//     setShowFieldMapModal(false);
+//     toast.success(`${mapped.length} contacts imported.`);
+
+//     setTimeout(() => {
+//       if (importedRef.current) {
+//         importedRef.current.scrollIntoView({ behavior: "smooth" });
+//       }
+//     }, 200);
+
+//     if (saveToDb) {
+//       try {
+//         setIsImporting(true);
+//         await axiosClient.post("/contacts/bulk-import", mapped);
+//         toast.success("Contacts also saved to your CRM.");
+//       } catch {
+//         toast.error("Saving to CRM failed.");
+//       } finally {
+//         setIsImporting(false);
+//       }
+//     }
+//   };
+
+//   const assignContacts = async () => {
+//     if (!campaign || !campaign.id) {
+//       toast.error("Campaign not ready. Please try again.");
+//       return;
+//     }
+//     if (selectedIds.length === 0) {
+//       toast.warn("Please select at least one contact");
+//       return;
+//     }
+
+//     const validIds = selectedIds.filter(id =>
+//       contacts.find(c => c.id === id && getPhone(c).trim() !== "")
+//     );
+
+//     if (validIds.length === 0) {
+//       toast.warn("No selected contacts have valid phone numbers.");
+//       return;
+//     }
+
+//     try {
+//       const payload = { contactIds: validIds };
+//       await axiosClient.post(
+//         `/campaign/${campaign.id}/assign-contacts`,
+//         payload
+//       );
+//       toast.success("Contacts assigned to campaign");
+//     } catch (err) {
+//       const message =
+//         err.response?.data?.message ||
+//         "Something went wrong during assignment.";
+//       toast.error(message);
+//     }
+//   };
+
+//   const allVisibleSelected = filteredContacts.every(c =>
+//     selectedIds.includes(c.id)
+//   );
+
+//   return (
+//     <div className="max-w-7xl mx-auto px-4 py-6">
+//       <h1 className="text-2xl font-bold text-purple-600 mb-6 flex items-center gap-2">
+//         🎯 Assign Contacts to Campaign
+//       </h1>
+
+//       <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 mb-6">
+//         <input
+//           className="border p-2 rounded-md w-full sm:w-1/3"
+//           type="text"
+//           placeholder="Search by name or phone..."
+//           value={search}
+//           onChange={e => setSearch(e.target.value)}
+//         />
+//         <TagFilterDropdown
+//           selectedTags={tags}
+//           onChange={setTags}
+//           category="All"
+//         />
+//         <label className="cursor-pointer text-purple-600 hover:underline text-sm sm:ml-auto">
+//           + Upload CSV
+//           <input
+//             type="file"
+//             accept=".csv"
+//             onChange={handleFileUpload}
+//             className="hidden"
+//           />
+//         </label>
+//       </div>
+
+//       <div
+//         className="bg-white rounded-xl shadow-sm overflow-x-auto"
+//         ref={importedRef}
+//       >
+//         <table className="min-w-full text-sm">
+//           <thead className="bg-gray-100 text-gray-700">
+//             <tr>
+//               <th className="px-4 py-2 text-center">
+//                 <input
+//                   type="checkbox"
+//                   checked={allVisibleSelected}
+//                   onChange={toggleSelectAll}
+//                 />
+//               </th>
+//               <th className="px-4 py-2 text-left">Name</th>
+//               <th className="px-4 py-2 text-left">Phone</th>
+//               <th className="px-4 py-2 text-left">Tags</th>
+//               <th className="px-4 py-2 text-left">Status</th>
+//             </tr>
+//           </thead>
+//           <tbody>
+//             {filteredContacts.map(contact => (
+//               <tr key={contact.id} className="border-t hover:bg-gray-50">
+//                 <td className="px-4 py-2 text-center">
+//                   <input
+//                     type="checkbox"
+//                     checked={selectedIds.includes(contact.id)}
+//                     onChange={() => toggleContact(contact.id)}
+//                   />
+//                 </td>
+//                 <td className="px-4 py-2">{contact.name || "Unnamed"}</td>
+//                 <td className="px-4 py-2">{getPhone(contact) || "—"}</td>
+//                 <td className="px-4 py-2">
+//                   <div className="flex flex-wrap gap-1">
+//                     {(contact.tags || contact.contactTags || []).map(tag => (
+//                       <span
+//                         key={tag.tagId || tag.id}
+//                         className="px-2 py-0.5 text-xs rounded-full"
+//                         style={{
+//                           backgroundColor: tag.colorHex || "#E5E7EB",
+//                           color: "#000",
+//                         }}
+//                       >
+//                         {tag.tagName || tag.name}
+//                       </span>
+//                     ))}
+//                   </div>
+//                 </td>
+//                 <td className="px-4 py-2">
+//                   {getPhone(contact).trim() !== "" ? "✅ Valid" : "⚠️ No Phone"}
+//                 </td>
+//               </tr>
+//             ))}
+//           </tbody>
+//         </table>
+//       </div>
+
+//       <div className="flex flex-col sm:flex-row justify-between items-center mt-4 text-sm text-gray-600">
+//         <div>
+//           Selected: {selectedIds.length} / WhatsApp-ready:{" "}
+//           {
+//             filteredContacts.filter(
+//               c => selectedIds.includes(c.id) && getPhone(c).trim() !== ""
+//             ).length
+//           }
+//         </div>
+//         {importedCount > 0 && (
+//           <div className="text-green-600">
+//             ✔ Imported: {importedCount} contact(s)
+//           </div>
+//         )}
+//       </div>
+
+//       {/* ❌ Preview removed */}
+
+//       <div className="mt-6 flex justify-end">
+//         <button
+//           onClick={assignContacts}
+//           disabled={false}
+//           className="px-6 py-3 rounded-lg transition bg-purple-600 text-white hover:bg-purple-700"
+//         >
+//           Assign to Campaign
+//         </button>
+//       </div>
+
+//       <Modal
+//         isOpen={showFieldMapModal}
+//         onRequestClose={() => setShowFieldMapModal(false)}
+//         className="bg-white rounded-lg shadow-lg max-w-xl mx-auto mt-20 p-6"
+//         overlayClassName="fixed inset-0 bg-black bg-opacity-40 flex items-center justify-center z-50"
+//       >
+//         <h2 className="text-lg font-bold mb-4">🧩 Map CSV Fields</h2>
+//         <div className="space-y-4">
+//           {["name", "phone"].map(field => (
+//             <div key={field}>
+//               <label className="block text-sm font-medium mb-1 capitalize">
+//                 {field}
+//               </label>
+//               <select
+//                 className="border px-3 py-2 rounded w-full"
+//                 value={fieldMapping[field]}
+//                 onChange={e =>
+//                   setFieldMapping(prev => ({
+//                     ...prev,
+//                     [field]: e.target.value,
+//                   }))
+//                 }
+//               >
+//                 <option value="">-- Select CSV column --</option>
+//                 {csvHeaders.map(header => (
+//                   <option key={header} value={header}>
+//                     {header}
+//                   </option>
+//                 ))}
+//               </select>
+//             </div>
+//           ))}
+//           <div>
+//             <label className="block text-sm font-medium mb-1">
+//               Apply Tag to All
+//             </label>
+//             <select
+//               className="border px-3 py-2 rounded w-full"
+//               value={selectedTagId || ""}
+//               onChange={e => setSelectedTagId(e.target.value)}
+//             >
+//               <option value="">-- None --</option>
+//               {Array.isArray(allTags) &&
+//                 allTags.map(tag => (
+//                   <option key={tag.id} value={tag.id}>
+//                     {tag.name}
+//                   </option>
+//                 ))}
+//             </select>
+//           </div>
+//         </div>
+
+//         <div className="mt-4">
+//           <label className="inline-flex items-center">
+//             <input
+//               type="checkbox"
+//               className="mr-2"
+//               checked={saveToDb}
+//               onChange={e => setSaveToDb(e.target.checked)}
+//             />
+//             Also save these contacts to your CRM
+//           </label>
+//         </div>
+
+//         <div className="mt-6 flex justify-end gap-3">
+//           <button
+//             className="text-gray-600 hover:underline"
+//             onClick={() => setShowFieldMapModal(false)}
+//           >
+//             Cancel
+//           </button>
+//           <button
+//             className="bg-purple-600 text-white px-4 py-2 rounded-md"
+//             onClick={applyFieldMapping}
+//           >
+//             Import & Apply
+//           </button>
+//         </div>
+//       </Modal>
+//     </div>
+//   );
+// }
  
  
 ====================================================== 
@@ -4665,9 +5985,9 @@ function CampaignBuilderPage() {
         <div className="space-y-4">
           {/* Campaign meta */}
           <section className="rounded-xl border bg-white p-4 shadow-sm">
-            <h2 className="mb-3 text-sm font-semibold text-gray-800">
+            {/* <h2 className="mb-3 text-sm font-semibold text-gray-800">
               Campaign details
-            </h2>
+            </h2> */}
             <div className="space-y-3 text-sm">
               <div>
                 <label className="mb-1 block font-medium text-gray-700">
@@ -7265,6 +8585,7 @@ export default CampaignRecipientsPage;
 FILE: D:\xbytechat\xbytechat-ui\src\pages\Campaigns\CampaignSendLogs.jsx 
 ====================================================== 
  
+// 📄 src/pages/campaigns/CampaignSendLogs.jsx
 import React, { useEffect, useState, useCallback } from "react";
 import { useParams, Link } from "react-router-dom";
 import axiosClient from "../../api/axiosClient";
@@ -7279,12 +8600,12 @@ import ContactJourneyModal from "./components/ContactJourneyModal";
 function CampaignSendLogs() {
   const { campaignId } = useParams();
 
-  // State for data returned from the server
+  // data
   const [logs, setLogs] = useState([]);
   const [summary, setSummary] = useState(null);
   const [loading, setLoading] = useState(true);
 
-  // State for server-side filtering and pagination
+  // filters/paging
   const [search, setSearch] = useState("");
   const [statusFilter, setStatusFilter] = useState("");
   const [page, setPage] = useState(1);
@@ -7292,30 +8613,35 @@ function CampaignSendLogs() {
   const [totalPages, setTotalPages] = useState(0);
   const [totalLogs, setTotalLogs] = useState(0);
 
-  // State for modals
+  // modals
   const [previewOpen, setPreviewOpen] = useState(false);
   const [selectedLog, setSelectedLog] = useState(null);
   const [isJourneyOpen, setIsJourneyOpen] = useState(false);
   const [journeyLog, setJourneyLog] = useState(null);
 
-  // --- DATA FETCHING ---
+  // --- helpers ---
+  // Prefer contactPhone when it's a real value; otherwise fall back to recipientNumber / to.
+  const getDisplayPhone = log => {
+    const clean = v => (typeof v === "string" ? v.trim() : v);
+    const p = clean(log?.contactPhone);
+    if (p && p !== "-" && p.toLowerCase() !== "n/a") return p;
+    const r = clean(log?.recipientNumber) || clean(log?.to);
+    return r || ""; // empty if truly unavailable
+  };
 
+  // --- fetching ---
   const fetchLogs = useCallback(async () => {
     setLoading(true);
     try {
-      // Construct URL with query parameters for server-side processing
       const params = new URLSearchParams({
         page,
         pageSize,
         status: statusFilter,
         search,
       });
-
       const res = await axiosClient.get(
         `/campaign-logs/campaign/${campaignId}?${params.toString()}`
       );
-
-      // The API now returns a paged result object
       setLogs(res.data.items || []);
       setTotalLogs(res.data.totalCount || 0);
       setTotalPages(res.data.totalPages || 0);
@@ -7331,50 +8657,34 @@ function CampaignSendLogs() {
       const res = await axiosClient.get(
         `/campaign-logs/campaign/${campaignId}/summary`
       );
-      // Ensure you are accessing the correct property from your ResponseResult
       setSummary(res.data.data || res.data);
     } catch {
       console.error("❌ Failed to fetch summary");
     }
   }, [campaignId]);
 
-  // This effect triggers an API call whenever a filter or page changes
   useEffect(() => {
-    // A small debounce to prevent API calls on every keystroke for search
-    const handler = setTimeout(() => {
-      fetchLogs();
-    }, 500); // 500ms delay
-
-    return () => {
-      clearTimeout(handler);
-    };
+    const t = setTimeout(fetchLogs, 500);
+    return () => clearTimeout(t);
   }, [fetchLogs]);
 
-  // This effect fetches the summary only once when the component loads
   useEffect(() => {
     fetchSummary();
   }, [fetchSummary]);
 
-  // NOTE: The old client-side filtering useEffect has been removed.
-
-  // --- EVENT HANDLERS ---
-
+  // --- handlers ---
   const handleStatusChange = e => {
     setStatusFilter(e.target.value);
-    setPage(1); // Reset to the first page when a filter changes
+    setPage(1);
   };
-
   const handleSearchChange = e => {
     setSearch(e.target.value);
-    setPage(1); // Reset to the first page when search text changes
+    setPage(1);
   };
 
   const handleExport = () => {
-    // This function would also need to be updated to fetch ALL logs for export
-    // For now, it exports the current page.
     const headers = [
-      "Contact Name",
-      "Phone",
+      "Contact Phone",
       "Status",
       "Channel",
       "Sent At",
@@ -7386,15 +8696,14 @@ function CampaignSendLogs() {
     const csvRows = [
       headers,
       ...logs.map(log => [
-        log.contactName,
-        log.contactPhone,
+        getDisplayPhone(log), // ✅ phone only
         log.sendStatus,
         log.sourceChannel,
-        log.sentAt ? new Date(log.sentAt).toLocaleString() : "-",
-        log.deliveredAt ? new Date(log.deliveredAt).toLocaleString() : "-",
-        log.readAt ? new Date(log.readAt).toLocaleString() : "-",
+        log.sentAt ? new Date(log.sentAt).toLocaleString() : "",
+        log.deliveredAt ? new Date(log.deliveredAt).toLocaleString() : "",
+        log.readAt ? new Date(log.readAt).toLocaleString() : "",
         log.isClicked ? "Yes" : "No",
-        log.clickType || "-",
+        log.clickType || "",
       ]),
     ];
     const blob = new Blob([csvRows.map(r => r.join(",")).join("\n")], {
@@ -7414,7 +8723,7 @@ function CampaignSendLogs() {
             try {
               await axiosClient.post(`/campaign-logs/${logId}/retry`);
               toast.success("✅ Retry triggered");
-              fetchLogs(); // Re-fetch data to show updated status
+              fetchLogs();
               fetchSummary();
             } catch {
               toast.error("❌ Retry failed");
@@ -7440,7 +8749,7 @@ function CampaignSendLogs() {
                 `/campaign-logs/campaign/${campaignId}/retry-all`
               );
               toast.success(`✅ Retried ${res.data.retried} messages`);
-              fetchLogs(); // Re-fetch data
+              fetchLogs();
               fetchSummary();
             } catch {
               toast.error("❌ Retry failed");
@@ -7461,6 +8770,7 @@ function CampaignSendLogs() {
     setSelectedLog(null);
   };
 
+  // --- render ---
   return (
     <div className="p-6 bg-gray-50 min-h-screen">
       <div className="flex justify-between items-center mb-4">
@@ -7495,7 +8805,6 @@ function CampaignSendLogs() {
           <option value="Queued">Queued</option>
           <option value="Failed">Failed</option>
         </select>
-        {/* You can add back the other filters here following the same pattern */}
       </div>
 
       <div className="mb-4 flex justify-between">
@@ -7540,7 +8849,8 @@ function CampaignSendLogs() {
               {logs.map(log => (
                 <tr key={log.id} className="border-t hover:bg-gray-50">
                   <td className="p-2">
-                    {log.contactName} ({log.contactPhone})
+                    {/* ✅ phone only – no N/A, no parentheses */}
+                    {getDisplayPhone(log) || "-"}
                   </td>
                   <td className="p-2">{log.sendStatus || "-"}</td>
                   <td className="p-2">{log.sourceChannel || "-"}</td>
@@ -7618,6 +8928,360 @@ function CampaignSendLogs() {
 }
 
 export default CampaignSendLogs;
+
+// import React, { useEffect, useState, useCallback } from "react";
+// import { useParams, Link } from "react-router-dom";
+// import axiosClient from "../../api/axiosClient";
+// import { toast } from "react-toastify";
+// import { saveAs } from "file-saver";
+// import { confirmAlert } from "react-confirm-alert";
+// import "react-confirm-alert/src/react-confirm-alert.css";
+// import MessagePreviewModal from "./components/MessagePreviewModal";
+// import CampaignSummaryBar from "./components/CampaignSummaryBar";
+// import ContactJourneyModal from "./components/ContactJourneyModal";
+
+// function CampaignSendLogs() {
+//   const { campaignId } = useParams();
+
+//   // State for data returned from the server
+//   const [logs, setLogs] = useState([]);
+//   const [summary, setSummary] = useState(null);
+//   const [loading, setLoading] = useState(true);
+
+//   // State for server-side filtering and pagination
+//   const [search, setSearch] = useState("");
+//   const [statusFilter, setStatusFilter] = useState("");
+//   const [page, setPage] = useState(1);
+//   const [pageSize] = useState(10);
+//   const [totalPages, setTotalPages] = useState(0);
+//   const [totalLogs, setTotalLogs] = useState(0);
+
+//   // State for modals
+//   const [previewOpen, setPreviewOpen] = useState(false);
+//   const [selectedLog, setSelectedLog] = useState(null);
+//   const [isJourneyOpen, setIsJourneyOpen] = useState(false);
+//   const [journeyLog, setJourneyLog] = useState(null);
+
+//   // --- DATA FETCHING ---
+
+//   const fetchLogs = useCallback(async () => {
+//     setLoading(true);
+//     try {
+//       // Construct URL with query parameters for server-side processing
+//       const params = new URLSearchParams({
+//         page,
+//         pageSize,
+//         status: statusFilter,
+//         search,
+//       });
+
+//       const res = await axiosClient.get(
+//         `/campaign-logs/campaign/${campaignId}?${params.toString()}`
+//       );
+
+//       // The API now returns a paged result object
+//       setLogs(res.data.items || []);
+//       setTotalLogs(res.data.totalCount || 0);
+//       setTotalPages(res.data.totalPages || 0);
+//     } catch {
+//       toast.error("❌ Failed to load send logs");
+//     } finally {
+//       setLoading(false);
+//     }
+//   }, [campaignId, page, pageSize, statusFilter, search]);
+
+//   const fetchSummary = useCallback(async () => {
+//     try {
+//       const res = await axiosClient.get(
+//         `/campaign-logs/campaign/${campaignId}/summary`
+//       );
+//       // Ensure you are accessing the correct property from your ResponseResult
+//       setSummary(res.data.data || res.data);
+//     } catch {
+//       console.error("❌ Failed to fetch summary");
+//     }
+//   }, [campaignId]);
+
+//   // This effect triggers an API call whenever a filter or page changes
+//   useEffect(() => {
+//     // A small debounce to prevent API calls on every keystroke for search
+//     const handler = setTimeout(() => {
+//       fetchLogs();
+//     }, 500); // 500ms delay
+
+//     return () => {
+//       clearTimeout(handler);
+//     };
+//   }, [fetchLogs]);
+
+//   // This effect fetches the summary only once when the component loads
+//   useEffect(() => {
+//     fetchSummary();
+//   }, [fetchSummary]);
+
+//   // NOTE: The old client-side filtering useEffect has been removed.
+
+//   // --- EVENT HANDLERS ---
+
+//   const handleStatusChange = e => {
+//     setStatusFilter(e.target.value);
+//     setPage(1); // Reset to the first page when a filter changes
+//   };
+
+//   const handleSearchChange = e => {
+//     setSearch(e.target.value);
+//     setPage(1); // Reset to the first page when search text changes
+//   };
+
+//   const handleExport = () => {
+//     // This function would also need to be updated to fetch ALL logs for export
+//     // For now, it exports the current page.
+//     const headers = [
+//       "Contact Name",
+//       "Phone",
+//       "Status",
+//       "Channel",
+//       "Sent At",
+//       "Delivered",
+//       "Read",
+//       "Clicked",
+//       "Click Type",
+//     ];
+//     const csvRows = [
+//       headers,
+//       ...logs.map(log => [
+//         log.contactName,
+//         log.contactPhone,
+//         log.sendStatus,
+//         log.sourceChannel,
+//         log.sentAt ? new Date(log.sentAt).toLocaleString() : "-",
+//         log.deliveredAt ? new Date(log.deliveredAt).toLocaleString() : "-",
+//         log.readAt ? new Date(log.readAt).toLocaleString() : "-",
+//         log.isClicked ? "Yes" : "No",
+//         log.clickType || "-",
+//       ]),
+//     ];
+//     const blob = new Blob([csvRows.map(r => r.join(",")).join("\n")], {
+//       type: "text/csv",
+//     });
+//     saveAs(blob, `CampaignLogs-${campaignId}.csv`);
+//   };
+
+//   const handleRetrySingle = logId => {
+//     confirmAlert({
+//       title: "Retry This Message?",
+//       message: "Are you sure you want to retry this failed message?",
+//       buttons: [
+//         {
+//           label: "Yes",
+//           onClick: async () => {
+//             try {
+//               await axiosClient.post(`/campaign-logs/${logId}/retry`);
+//               toast.success("✅ Retry triggered");
+//               fetchLogs(); // Re-fetch data to show updated status
+//               fetchSummary();
+//             } catch {
+//               toast.error("❌ Retry failed");
+//             }
+//           },
+//         },
+//         { label: "Cancel" },
+//       ],
+//     });
+//   };
+
+//   const handleRetryAll = () => {
+//     confirmAlert({
+//       title: "Retry All Failed Messages?",
+//       message:
+//         "This will retry all failed messages in this campaign. Continue?",
+//       buttons: [
+//         {
+//           label: "Yes",
+//           onClick: async () => {
+//             try {
+//               const res = await axiosClient.post(
+//                 `/campaign-logs/campaign/${campaignId}/retry-all`
+//               );
+//               toast.success(`✅ Retried ${res.data.retried} messages`);
+//               fetchLogs(); // Re-fetch data
+//               fetchSummary();
+//             } catch {
+//               toast.error("❌ Retry failed");
+//             }
+//           },
+//         },
+//         { label: "Cancel" },
+//       ],
+//     });
+//   };
+
+//   const openPreview = log => {
+//     setSelectedLog(log);
+//     setPreviewOpen(true);
+//   };
+//   const closePreview = () => {
+//     setPreviewOpen(false);
+//     setSelectedLog(null);
+//   };
+
+//   return (
+//     <div className="p-6 bg-gray-50 min-h-screen">
+//       <div className="flex justify-between items-center mb-4">
+//         <h1 className="text-2xl font-bold text-purple-700">
+//           📨 Send Logs for Campaign
+//         </h1>
+//         <Link
+//           to="/app/campaigns/template-campaigns-list"
+//           className="inline-flex items-center gap-2 rounded-lg border px-3 py-1.5 text-sm text-gray-700 hover:bg-gray-50 transition"
+//         >
+//           <span className="text-lg">←</span> Back to Campaigns
+//         </Link>
+//       </div>
+
+//       <CampaignSummaryBar summary={summary} />
+
+//       <div className="grid md:grid-cols-4 gap-4 mb-4">
+//         <input
+//           className="border px-3 py-2 rounded"
+//           placeholder="🔍 Search by name or phone"
+//           onChange={handleSearchChange}
+//         />
+//         <select
+//           className="border px-3 py-2 rounded"
+//           value={statusFilter}
+//           onChange={handleStatusChange}
+//         >
+//           <option value="">All Statuses</option>
+//           <option value="Sent">Sent</option>
+//           <option value="Delivered">Delivered</option>
+//           <option value="Read">Read</option>
+//           <option value="Queued">Queued</option>
+//           <option value="Failed">Failed</option>
+//         </select>
+//         {/* You can add back the other filters here following the same pattern */}
+//       </div>
+
+//       <div className="mb-4 flex justify-between">
+//         <p className="text-sm text-gray-500">
+//           Showing {logs.length} of {totalLogs} logs
+//         </p>
+//         <div className="space-x-2">
+//           <button
+//             onClick={handleExport}
+//             className="bg-emerald-600 text-white text-sm px-3 py-1 rounded hover:bg-emerald-700"
+//           >
+//             ⬇ Export CSV
+//           </button>
+//           <button
+//             onClick={handleRetryAll}
+//             className="bg-purple-600 text-white text-sm px-3 py-1 rounded hover:bg-purple-700"
+//           >
+//             🔁 Retry All Failed
+//           </button>
+//         </div>
+//       </div>
+
+//       {loading ? (
+//         <p>Loading logs...</p>
+//       ) : logs.length === 0 ? (
+//         <p className="text-gray-500">No logs found with current filters.</p>
+//       ) : (
+//         <div className="overflow-x-auto bg-white shadow rounded">
+//           <table className="w-full text-sm">
+//             <thead className="bg-gray-100 text-left">
+//               <tr>
+//                 <th className="p-2">Contact</th>
+//                 <th className="p-2">Status</th>
+//                 <th className="p-2">Channel</th>
+//                 <th className="p-2">Sent</th>
+//                 <th className="p-2">Clicked</th>
+//                 <th className="p-2">Click Type</th>
+//                 <th className="p-2">Actions</th>
+//               </tr>
+//             </thead>
+//             <tbody>
+//               {logs.map(log => (
+//                 <tr key={log.id} className="border-t hover:bg-gray-50">
+//                   <td className="p-2">
+//                     {log.contactName} ({log.contactPhone})
+//                   </td>
+//                   <td className="p-2">{log.sendStatus || "-"}</td>
+//                   <td className="p-2">{log.sourceChannel || "-"}</td>
+//                   <td className="p-2">
+//                     {log.sentAt ? new Date(log.sentAt).toLocaleString() : "-"}
+//                   </td>
+//                   <td className="p-2">{log.isClicked ? "✅ Yes" : "❌ No"}</td>
+//                   <td className="p-2">{log.clickType || "-"}</td>
+//                   <td className="p-2 space-x-2">
+//                     <button
+//                       onClick={() => openPreview(log)}
+//                       className="text-xs text-blue-600 hover:underline"
+//                     >
+//                       Preview
+//                     </button>
+//                     <button
+//                       onClick={() => {
+//                         setJourneyLog(log);
+//                         setIsJourneyOpen(true);
+//                       }}
+//                       className="text-xs text-indigo-600 hover:underline"
+//                     >
+//                       🧭 Journey
+//                     </button>
+//                     {log.sendStatus === "Failed" && (
+//                       <button
+//                         onClick={() => handleRetrySingle(log.id)}
+//                         className="text-xs text-white bg-red-500 hover:bg-red-600 px-2 py-1 rounded"
+//                       >
+//                         Retry
+//                       </button>
+//                     )}
+//                   </td>
+//                 </tr>
+//               ))}
+//             </tbody>
+//           </table>
+//         </div>
+//       )}
+
+//       {totalPages > 1 && (
+//         <div className="flex justify-end items-center mt-4 space-x-2">
+//           <button
+//             className="px-2 py-1 text-sm border rounded"
+//             disabled={page === 1}
+//             onClick={() => setPage(p => p - 1)}
+//           >
+//             ⬅ Prev
+//           </button>
+//           <span className="text-sm text-gray-600">
+//             Page {page} of {totalPages}
+//           </span>
+//           <button
+//             className="px-2 py-1 text-sm border rounded"
+//             disabled={page === totalPages}
+//             onClick={() => setPage(p => p + 1)}
+//           >
+//             Next ➡
+//           </button>
+//         </div>
+//       )}
+
+//       <MessagePreviewModal
+//         isOpen={previewOpen}
+//         onClose={closePreview}
+//         messageLog={selectedLog}
+//       />
+//       <ContactJourneyModal
+//         isOpen={isJourneyOpen}
+//         onClose={() => setIsJourneyOpen(false)}
+//         log={journeyLog}
+//       />
+//     </div>
+//   );
+// }
+
+// export default CampaignSendLogs;
  
  
 ====================================================== 
@@ -7631,7 +9295,7 @@ FILE: D:\xbytechat\xbytechat-ui\src\pages\Campaigns\AssignContactsPage.jsx
 ====================================================== 
  
 import React, { useEffect, useRef, useState } from "react";
-import { useParams } fro 
+import { useParams } from "react-router 
  
 ====================================================== 
 FILE: D:\xbytechat\xbytechat-ui\src\pages\Campaigns\CampaignWizard.jsx 
@@ -11117,6 +12781,189 @@ export default CampaignDashboard;
  
  
 ====================================================== 
+FILE: D:\xbytechat\xbytechat-ui\src\pages\Campaigns\api\csvApi.js 
+====================================================== 
+ 
+// src/pages/Campaigns/api/csvApi.js
+import axiosClient from "../../../api/axiosClient";
+
+/** Helper to unwrap { success, data } or raw payloads */
+function un(data) {
+  return data?.data ?? data;
+}
+
+/** ---------- Schema + Sample ---------- **/
+
+export async function fetchCsvSchema(campaignId) {
+  const { data } = await axiosClient.get(
+    `/campaigns/${campaignId}/csv-sample/schema`
+  );
+  const p = un(data) ?? {};
+  const headers = p.headers ??
+    p.data?.headers ??
+    (Array.isArray(p?.data) ? p.data : []) ?? ["phone"];
+  const placeholderCount = p.placeholderCount ?? p.data?.placeholderCount ?? 0;
+
+  return { headers, placeholderCount };
+}
+
+export async function downloadCsvSampleBlob(campaignId) {
+  const res = await axiosClient.get(`/campaigns/${campaignId}/csv-sample`, {
+    responseType: "blob",
+  });
+  return res.data; // Blob
+}
+
+/** ---------- Upload + Batch Info ---------- **/
+
+/**
+ * Uploads a CSV and returns a normalized object:
+ * { batchId, headerJson: string[] }
+ */
+export async function uploadCsvBatch(file, audienceId = null) {
+  const form = new FormData();
+  form.append("file", file);
+  if (audienceId) form.append("audienceId", audienceId);
+
+  const { data } = await axiosClient.post("/csv/batch", form, {
+    headers: { "Content-Type": "multipart/form-data" },
+  });
+  const p = un(data) ?? {};
+
+  // Normalize keys so components can immediately render headers
+  const batchId = p.batchId ?? p.BatchId ?? p.id ?? p.Id;
+  const headerJson = p.headerJson ?? p.headers ?? p.Headers ?? [];
+
+  return { ...p, batchId, headerJson };
+}
+
+/**
+ * Returns batch meta in a normalized shape:
+ * { batchId, headers, headerJson, rowCount, createdAt, ... }
+ */
+export async function getBatchInfo(batchId) {
+  const { data } = await axiosClient.get(`/csv/batch/${batchId}`);
+  const p = un(data) ?? {};
+  const headers = p.headers ?? p.headerJson ?? p.Headers ?? [];
+  return {
+    ...p,
+    batchId: p.batchId ?? p.BatchId ?? batchId,
+    headers,
+    headerJson: headers,
+  };
+}
+
+/** ---------- Sample (preview rows) ---------- **/
+
+/**
+ * Always returns { headers: string[], rows: Array<Record<string,string>> }
+ * even if the backend only returns an array of { rowIndex, data | Data }.
+ */
+export async function getBatchSample(batchId, take = 10) {
+  const { data } = await axiosClient.get(`/csv/batch/${batchId}/sample`, {
+    params: { take },
+  });
+  const payload = un(data);
+
+  // Case A: backend already returns { headers, rows }
+  if (payload?.headers && payload?.rows) {
+    return {
+      headers: payload.headers,
+      rows: payload.rows,
+    };
+  }
+
+  // Case B: backend returns only rows as an array
+  if (Array.isArray(payload)) {
+    const info = await getBatchInfo(batchId);
+    const headers = info.headers?.length ? info.headers : ["phone"];
+    const rows = payload.map(x => x.data ?? x.Data ?? x.row ?? x.Row ?? {});
+    return { headers, rows };
+  }
+
+  // Case C: unexpected shape — fall back to batch info
+  const info = await getBatchInfo(batchId);
+  return { headers: info.headers ?? ["phone"], rows: [] };
+}
+
+/** ---------- Validation ---------- **/
+
+/**
+ * Validates the batch using the chosen phone header and options.
+ * Returns a normalized shape: { problems: string[], ...raw }
+ */
+export async function validateBatch(batchId, req) {
+  // Map UI request -> backend field names (tolerant to either)
+  const body = {
+    phoneField: req.phoneHeader ?? req.phoneField,
+    requiredHeaders: req.requiredHeaders ?? [],
+    normalizePhones: !!(req.normalizePhone ?? req.normalizePhones),
+    deduplicate: !!(req.checkDuplicates ?? req.deduplicate),
+  };
+
+  const { data } = await axiosClient.post(
+    `/csv/batch/${batchId}/validate`,
+    body
+  );
+  const p = un(data) ?? {};
+
+  // Normalize a few common shapes
+  const problems = p.problems ?? p.errors ?? p.Errors ?? [];
+
+  return { ...p, problems };
+}
+
+/** ---------- Optional: mapping helpers (no-ops if backend lacks them) ---------- **/
+
+/**
+ * Ask backend for parameter mapping suggestions based on the batch.
+ * Gracefully handles 404/501 by returning { items: [] }.
+ */
+export async function suggestMappings(campaignId, batchId) {
+  try {
+    const { data } = await axiosClient.get(
+      `/campaigns/${campaignId}/mappings/suggest`,
+      { params: { batchId } }
+    );
+    const p = un(data) ?? {};
+    return { items: p.items ?? [] };
+  } catch {
+    return { items: [] };
+  }
+}
+
+/** Persist current mapping preferences (optional, idempotent). */
+export async function saveMappings(campaignId, mappingDto) {
+  // many backends use POST /campaigns/{id}/mappings
+  const { data } = await axiosClient.post(
+    `/campaigns/${campaignId}/mappings`,
+    mappingDto
+  );
+  return un(data) ?? {};
+}
+
+/** ---------- Materialize (dry-run / commit) ---------- **/
+
+/**
+ * body = {
+ *   mode: "dryRun" | "commit",
+ *   batchId,
+ *   normalizePhone: boolean,
+ *   deduplicate: boolean,
+ *   phoneHeader: string,
+ *   mappings: [...]
+ * }
+ */
+export async function materialize(campaignId, body) {
+  const { data } = await axiosClient.post(
+    `/campaigns/${campaignId}/materialize`,
+    body
+  );
+  return un(data) ?? {};
+}
+ 
+ 
+====================================================== 
 FILE: D:\xbytechat\xbytechat-ui\src\pages\Campaigns\components\CampaignButtonsForm.jsx 
 ====================================================== 
  
@@ -13801,6 +15648,2639 @@ export default ContactSelector;
 // }
 
 // export default ContactSelector;
+ 
+ 
+====================================================== 
+FILE: D:\xbytechat\xbytechat-ui\src\pages\Campaigns\components\CsvAudienceSection.jsx 
+====================================================== 
+ 
+// src/pages/Campaigns/components/CsvAudienceSection.jsx
+import React, { useEffect, useMemo, useRef, useState } from "react";
+import { toast } from "react-toastify";
+import {
+  fetchCsvSchema,
+  downloadCsvSampleBlob,
+  uploadCsvBatch,
+  getBatchSample,
+  validateBatch,
+  suggestMappings,
+  saveMappings,
+  materialize,
+} from "../api/csvApi";
+
+/* ---------------- Utilities ---------------- */
+
+function saveBlob(blob, filename) {
+  const url = window.URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = filename;
+  a.click();
+  window.URL.revokeObjectURL(url);
+}
+
+const norm = s =>
+  String(s || "")
+    .toLowerCase()
+    .replace(/[\s._-]+/g, "")
+    .replace(/[^a-z0-9]/g, "");
+
+const PHONE_ALIASES = ["phone", "mobile", "whatsapp", "number", "phonee164"];
+
+// Canonical keys we want to map in CSV (beyond {{n}})
+const CANONICAL_KEYS = [
+  "header.image_url",
+  "header.video_url",
+  "header.document_url",
+  "button1.url_param",
+  "button2.url_param",
+  "button3.url_param",
+];
+
+// Aliases for non-{{n}} canonical keys
+const ALIASES = {
+  "header.image_url": ["image", "imageurl", "headerimage"],
+  "header.video_url": ["video", "videourl", "headervideo"],
+  "header.document_url": ["document", "doc", "pdf", "documenturl", "pdfurl"],
+  "button1.url_param": ["btn1", "button1", "url1"],
+  "button2.url_param": ["btn2", "button2", "url2"],
+  "button3.url_param": ["btn3", "button3", "url3"],
+};
+
+// Auto-pick CSV columns for expected canonical keys.
+function autoPick(headers, wants, fallbackGreedyBody = false) {
+  const map = {};
+  const used = new Set();
+  const H = headers.map(h => ({ raw: h, k: norm(h) }));
+
+  // 1) exact (case-insensitive)
+  for (const key of wants) {
+    const hit = headers.find(h => h.toLowerCase() === key.toLowerCase());
+    if (hit) {
+      map[key] = hit;
+      used.add(hit);
+    }
+  }
+
+  // 2) alias match
+  for (const key of wants) {
+    if (map[key]) continue;
+    const aliases = ALIASES[key] || [];
+    const hit = H.find(
+      h => aliases.some(a => h.k === norm(a)) && !used.has(h.raw)
+    );
+    if (hit) {
+      map[key] = hit.raw;
+      used.add(hit.raw);
+    }
+  }
+
+  // 3) “paramN” / “body.N” convenience for body.*
+  for (const key of wants) {
+    if (map[key]) continue;
+    const m = key.match(/^body\.(\d+)$/);
+    if (!m) continue;
+    const n = m[1];
+    const hit = H.find(
+      h => (h.k === `param${n}` || h.k === `body${n}`) && !used.has(h.raw)
+    );
+    if (hit) {
+      map[key] = hit.raw;
+      used.add(hit.raw);
+    }
+  }
+
+  // 4) greedy fill for remaining body.* only
+  if (fallbackGreedyBody) {
+    const remaining = headers.filter(h => !used.has(h));
+    for (const key of wants) {
+      if (!map[key] && key.startsWith("body.")) {
+        const pick = remaining.shift();
+        if (pick) {
+          map[key] = pick;
+          used.add(pick);
+        }
+      }
+    }
+  }
+
+  return map;
+}
+
+/* ---------------- Component ---------------- */
+
+export default function CsvAudienceSection({ campaignId }) {
+  const [loading, setLoading] = useState(true);
+  const [schema, setSchema] = useState(null);
+
+  const [batch, setBatch] = useState(null); // { batchId, headerJson, ... }
+  const [sample, setSample] = useState(null); // { headers, rows }
+  const [valReq, setValReq] = useState({
+    normalizePhone: true,
+    checkDuplicates: true,
+  });
+  const [valRes, setValRes] = useState(null);
+
+  // Legacy {{n}} param UI (kept for now)
+  const [paramMappings, setParamMappings] = useState([]);
+  // New: canonical key -> CSV column mapping (header/video/document/buttons)
+  const [expectedKeys, setExpectedKeys] = useState([]); // e.g. ['body.1','header.video_url','button1.url_param',...]
+  const [keyToColumn, setKeyToColumn] = useState({});
+
+  const [phoneHeader, setPhoneHeader] = useState("");
+  const [audienceName, setAudienceName] = useState(() => {
+    const d = new Date();
+    const yyyy = d.getFullYear();
+    const mm = String(d.getMonth() + 1).padStart(2, "0");
+    const dd = String(d.getDate()).padStart(2, "0");
+    return `Audience ${yyyy}-${mm}-${dd}`;
+  });
+
+  const [dryPreview, setDryPreview] = useState(null);
+  const [persisting, setPersisting] = useState(false);
+
+  // Collapsible UX
+  const [showMapping, setShowMapping] = useState(false);
+
+  const topRef = useRef(null);
+
+  // Load schema and prime expected keys / {{n}} slots
+  useEffect(() => {
+    let alive = true;
+    (async () => {
+      try {
+        setLoading(true);
+        const sc = await fetchCsvSchema(campaignId);
+        if (!alive) return;
+        setSchema(sc);
+
+        // 1) Build expected keys from placeholderCount + any canonical keys present in schema.headers
+        const N = Number(sc?.placeholderCount || 0);
+        const bodyKeys = Array.from({ length: N }, (_, i) => `body.${i + 1}`);
+
+        const hdrs = Array.isArray(sc?.headers) ? sc.headers : [];
+        const extraKeys = CANONICAL_KEYS.filter(k => hdrs.includes(k));
+
+        const keys = [...bodyKeys, ...extraKeys];
+        setExpectedKeys(keys);
+
+        // 2) Init legacy {{n}} mapping slots
+        setParamMappings(
+          Array.from({ length: N }, (_, i) => ({
+            index: i + 1,
+            sourceType: "csv",
+            sourceName: "",
+            constValue: "",
+          }))
+        );
+      } catch {
+        toast.error("Failed to load CSV schema.");
+      } finally {
+        if (alive) setLoading(false);
+      }
+    })();
+    return () => {
+      alive = false;
+    };
+  }, [campaignId]);
+
+  // Available headers from sample/batch/schema
+  const csvHeaders = useMemo(
+    () => sample?.headers ?? batch?.headerJson ?? schema?.headers ?? [],
+    [schema, batch, sample]
+  );
+
+  // Update a single {{n}} mapping slot
+  const updateMapping = (idx, patch) =>
+    setParamMappings(prev => {
+      const next = [...prev];
+      next[idx] = { ...next[idx], ...patch };
+      return next;
+    });
+
+  const handleDownloadSample = async () => {
+    try {
+      const blob = await downloadCsvSampleBlob(campaignId);
+      saveBlob(blob, `campaign-${campaignId}-sample.csv`);
+    } catch {
+      toast.error("Could not download sample CSV.");
+    }
+  };
+
+  const handleFile = async f => {
+    if (!f) return;
+    try {
+      const up = await uploadCsvBatch(f, null);
+      setBatch(up);
+      toast.success("CSV uploaded.");
+
+      const s = await getBatchSample(up?.batchId, 10);
+      setSample(s);
+
+      const hdrs = Array.isArray(s?.headers) ? s.headers : [];
+
+      // Auto-pick phone column
+      const lower = hdrs.map(h => String(h).toLowerCase());
+      const guessIdx = lower.findIndex(h =>
+        PHONE_ALIASES.some(k => h.includes(k))
+      );
+      setPhoneHeader(guessIdx >= 0 ? hdrs[guessIdx] : "");
+
+      // Auto-map canonical keys (body/header/buttons)
+      const km = autoPick(hdrs, expectedKeys, /*fallbackGreedyBody*/ true);
+      setKeyToColumn(km);
+
+      // Also seed the legacy {{n}} list so current backend keeps working
+      setParamMappings(prev =>
+        prev.map(p => {
+          const key = `body.${p.index}`;
+          return km[key] ? { ...p, sourceName: km[key] } : p;
+        })
+      );
+
+      // Try server suggestions (optional; reconciled over auto map)
+      try {
+        const sugg = await suggestMappings(campaignId, up?.batchId);
+        if (Array.isArray(sugg?.items)) {
+          // Expect items like { index: 1, sourceType: "csv"|"const", sourceName, constValue }
+          setParamMappings(prev =>
+            prev.map(p => {
+              const m = sugg.items.find(x => x.index === p.index);
+              return m ? { ...p, ...m } : p;
+            })
+          );
+        }
+      } catch {
+        /* no-op */
+      }
+
+      // Keep UI minimal by default
+      setShowMapping(false);
+    } catch (e) {
+      toast.error(e?.message || "CSV upload failed.");
+    }
+  };
+
+  const handleValidate = async () => {
+    if (!batch?.batchId) return toast.warn("Upload a CSV first.");
+    if (!phoneHeader) return toast.warn("Choose the phone column.");
+
+    try {
+      const req = {
+        phoneHeader,
+        requiredHeaders: [], // params may be constants
+        normalizePhone: !!valReq.normalizePhone,
+        checkDuplicates: !!valReq.checkDuplicates,
+      };
+      const res = await validateBatch(batch.batchId, req);
+      setValRes(res);
+      if (Array.isArray(res?.problems) && res.problems.length > 0) {
+        toast.warn(`Validation found ${res.problems.length} issue(s).`);
+      } else {
+        toast.success("Validation passed.");
+      }
+    } catch {
+      toast.error("Validation call failed.");
+    }
+  };
+
+  // Build the mapping dictionary the backend expects.
+  // Keeps compatibility with your existing backend:
+  // - "{{n}}" => "CSV_COLUMN" | "constant:VALUE"
+  // - canonical keys (header.*, button*.url_param) => "CSV_COLUMN"
+  const buildMappingDict = () => {
+    const dict = {};
+
+    // Legacy body placeholders
+    for (const m of paramMappings) {
+      const key = `{{${m.index}}}`;
+      if (m.sourceType === "csv") {
+        dict[key] = m.sourceName || "";
+      } else {
+        dict[key] = `constant:${m.constValue ?? ""}`;
+      }
+    }
+
+    // Canonical keys passthrough
+    for (const [k, v] of Object.entries(keyToColumn || {})) {
+      if (!v) continue;
+      dict[k] = v; // column name
+    }
+
+    return dict;
+  };
+
+  const handleDryRun = async () => {
+    if (!batch?.batchId) return toast.warn("Upload a CSV first.");
+
+    try {
+      await saveMappings(campaignId, buildMappingDict()); // optional persistence
+
+      const body = {
+        csvBatchId: batch.batchId,
+        mappings: buildMappingDict(),
+        phoneField: phoneHeader || undefined,
+        normalizePhones: !!valReq.normalizePhone,
+        deduplicate: !!valReq.checkDuplicates,
+        persist: false, // preview only
+        audienceName: undefined,
+      };
+
+      const preview = await materialize(campaignId, body);
+      setDryPreview(preview);
+      toast.success("Dry-run ready.");
+    } catch {
+      toast.error("Dry-run failed.");
+    }
+  };
+
+  const handlePersist = async () => {
+    if (!batch?.batchId) return toast.warn("Upload a CSV first.");
+    if (!audienceName?.trim()) return toast.warn("Enter an audience name.");
+
+    setPersisting(true);
+    try {
+      await saveMappings(campaignId, buildMappingDict());
+
+      const body = {
+        csvBatchId: batch.batchId,
+        mappings: buildMappingDict(),
+        phoneField: phoneHeader || undefined,
+        normalizePhones: !!valReq.normalizePhone,
+        deduplicate: !!valReq.checkDuplicates,
+        persist: true,
+        audienceName: audienceName.trim(),
+      };
+
+      await materialize(campaignId, body);
+      toast.success("Audience created and recipients materialized.");
+    } catch {
+      toast.error("Persist failed.");
+    } finally {
+      setPersisting(false);
+    }
+  };
+
+  // Mapping status chip (for the collapsed panel)
+  const mappingStatus = useMemo(() => {
+    if (!expectedKeys?.length) return { label: "No params", ok: true };
+    const missing = expectedKeys.filter(k => !keyToColumn[k]);
+    return missing.length
+      ? { label: `${missing.length} missing`, ok: false }
+      : { label: "All mapped", ok: true };
+  }, [expectedKeys, keyToColumn]);
+
+  if (loading) {
+    return (
+      <div className="rounded-lg border bg-white p-4 text-sm text-gray-500">
+        Loading CSV schema…
+      </div>
+    );
+  }
+
+  return (
+    <section ref={topRef} className="rounded-xl border bg-white p-4 shadow-sm">
+      <h2 className="mb-3 text-sm font-semibold text-gray-800">
+        Audience via CSV
+      </h2>
+
+      {/* Audience name */}
+      <div className="mb-3">
+        <input
+          className="w-full rounded-lg border px-3 py-2 text-sm outline-none focus:border-purple-500"
+          placeholder="Audience name (required to persist)"
+          value={audienceName}
+          onChange={e => setAudienceName(e.target.value)}
+        />
+      </div>
+
+      {/* Header row: expected columns + actions */}
+      <div className="mb-4 flex flex-wrap items-center gap-3 text-sm">
+        <div className="text-gray-600">
+          Expected columns:&nbsp;
+          <code className="rounded bg-gray-100 px-1.5 py-0.5">
+            {Array.isArray(schema?.headers) ? schema.headers.join(", ") : "—"}
+          </code>
+        </div>
+        <button
+          type="button"
+          onClick={handleDownloadSample}
+          className="rounded-md bg-indigo-600 px-3 py-1.5 text-xs font-semibold text-white hover:bg-indigo-700"
+        >
+          Download sample CSV
+        </button>
+        <label className="ml-auto cursor-pointer text-indigo-600 hover:underline">
+          Upload CSV
+          <input
+            type="file"
+            accept=".csv"
+            onChange={e => handleFile(e.target.files?.[0])}
+            className="hidden"
+          />
+        </label>
+      </div>
+
+      {/* Phone + toggles and collapsible mapping */}
+      <div className="grid gap-3 md:grid-cols-2">
+        {/* Phone + toggles */}
+        <div className="rounded-lg border p-3">
+          <h3 className="mb-2 text-xs font-semibold text-gray-700">
+            Phone column
+          </h3>
+          <select
+            className="w-full rounded-lg border px-3 py-2 text-sm outline-none focus:border-purple-500"
+            value={phoneHeader}
+            onChange={e => setPhoneHeader(e.target.value)}
+            disabled={!(csvHeaders ?? []).length}
+          >
+            <option value="">
+              {(csvHeaders ?? []).length
+                ? "-- Select column --"
+                : "Upload a CSV first"}
+            </option>
+            {(csvHeaders ?? []).map(h => (
+              <option key={h} value={h}>
+                {h}
+              </option>
+            ))}
+          </select>
+
+          <div className="mt-3 flex items-center gap-4 text-xs text-gray-700">
+            <label className="inline-flex items-center gap-2">
+              <input
+                type="checkbox"
+                checked={valReq.normalizePhone}
+                onChange={e =>
+                  setValReq(v => ({ ...v, normalizePhone: e.target.checked }))
+                }
+              />
+              Normalize phone (E.164)
+            </label>
+            <label className="inline-flex items-center gap-2">
+              <input
+                type="checkbox"
+                checked={valReq.checkDuplicates}
+                onChange={e =>
+                  setValReq(v => ({ ...v, checkDuplicates: e.target.checked }))
+                }
+              />
+              Deduplicate by phone
+            </label>
+          </div>
+        </div>
+
+        {/* Collapsible mapping & validation */}
+        <div className="rounded-lg border p-3">
+          <div className="flex items-center justify-between">
+            <h3 className="text-xs font-semibold text-gray-700">
+              Mapping & Validation
+            </h3>
+            <span
+              className={`rounded-full px-2 py-0.5 text-[11px] ${
+                mappingStatus.ok
+                  ? "bg-emerald-100 text-emerald-700"
+                  : "bg-amber-100 text-amber-700"
+              }`}
+            >
+              {mappingStatus.label}
+            </span>
+          </div>
+
+          <button
+            type="button"
+            className="mt-2 text-xs text-indigo-600 hover:underline"
+            onClick={() => setShowMapping(s => !s)}
+            disabled={!(csvHeaders ?? []).length}
+          >
+            {showMapping ? "Hide mapping" : "Edit mapping"}
+          </button>
+
+          {showMapping && (
+            <div className="mt-3 space-y-2">
+              {/* Canonical keys (header/video/document/buttons) + body.* */}
+              {expectedKeys.length === 0 ? (
+                <p className="text-xs text-gray-500">No parameters required.</p>
+              ) : (
+                expectedKeys.map(k => (
+                  <div
+                    key={k}
+                    className="grid grid-cols-[160px,1fr] items-center gap-2"
+                  >
+                    <div className="text-[11px] text-gray-500">{k}</div>
+                    <select
+                      className="w-full rounded-lg border px-2 py-1.5 text-xs outline-none focus:border-purple-500"
+                      value={keyToColumn[k] || ""}
+                      onChange={e =>
+                        setKeyToColumn(m => ({ ...m, [k]: e.target.value }))
+                      }
+                      disabled={!(csvHeaders ?? []).length}
+                    >
+                      <option value="">
+                        {(csvHeaders ?? []).length
+                          ? "-- Select column --"
+                          : "Upload CSV"}
+                      </option>
+                      {(csvHeaders ?? []).map(h => (
+                        <option key={h} value={h}>
+                          {h}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+                ))
+              )}
+
+              {/* Legacy {{n}} UI (kept for now) */}
+              {paramMappings.length > 0 && (
+                <div className="mt-4 border-t pt-3">
+                  <div className="mb-2 text-xs font-semibold text-gray-700">
+                    Body placeholders (legacy)
+                  </div>
+                  <div className="space-y-2">
+                    {paramMappings.map((m, i) => (
+                      <div
+                        key={m.index}
+                        className="grid grid-cols-[80px,100px,1fr] items-center gap-2"
+                      >
+                        <div className="text-xs text-gray-500">{`{{${m.index}}}`}</div>
+                        <select
+                          className="rounded-lg border px-2 py-1.5 text-xs outline-none focus:border-purple-500"
+                          value={m.sourceType}
+                          onChange={e =>
+                            updateMapping(i, { sourceType: e.target.value })
+                          }
+                        >
+                          <option value="csv">CSV column</option>
+                          <option value="const">Constant</option>
+                        </select>
+
+                        {m.sourceType === "csv" ? (
+                          <select
+                            className="w-full rounded-lg border px-2 py-1.5 text-xs outline-none focus:border-purple-500"
+                            value={m.sourceName || ""}
+                            onChange={e =>
+                              updateMapping(i, { sourceName: e.target.value })
+                            }
+                            disabled={!(csvHeaders ?? []).length}
+                          >
+                            <option value="">
+                              {(csvHeaders ?? []).length
+                                ? "-- Select column --"
+                                : "Upload CSV"}
+                            </option>
+                            {(csvHeaders ?? []).map(h => (
+                              <option key={h} value={h}>
+                                {h}
+                              </option>
+                            ))}
+                          </select>
+                        ) : (
+                          <input
+                            className="w-full rounded-lg border px-2 py-1.5 text-xs outline-none focus:border-purple-500"
+                            placeholder="Constant value"
+                            value={m.constValue || ""}
+                            onChange={e =>
+                              updateMapping(i, { constValue: e.target.value })
+                            }
+                          />
+                        )}
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+            </div>
+          )}
+        </div>
+      </div>
+
+      {/* Sample table */}
+      <div className="mt-4 overflow-x-auto rounded-lg border">
+        <table className="min-w-full text-xs">
+          <thead className="bg-gray-100 text-gray-700">
+            <tr>
+              {(sample?.headers ?? csvHeaders ?? []).map(h => (
+                <th key={h} className="px-3 py-2 text-left">
+                  {h}
+                </th>
+              ))}
+            </tr>
+          </thead>
+          <tbody>
+            {Array.isArray(sample?.rows) && sample.rows.length > 0 ? (
+              sample.rows.map((row, idx) => (
+                <tr key={idx} className="border-t">
+                  {(sample?.headers ?? csvHeaders ?? []).map(h => (
+                    <td key={h} className="px-3 py-1.5">
+                      {row?.[h] ?? ""}
+                    </td>
+                  ))}
+                </tr>
+              ))
+            ) : (
+              <tr>
+                <td
+                  className="px-3 py-2 text-gray-400"
+                  colSpan={(csvHeaders ?? []).length || 1}
+                >
+                  No rows yet
+                </td>
+              </tr>
+            )}
+          </tbody>
+        </table>
+      </div>
+
+      {/* Actions */}
+      <div className="mt-4 flex flex-wrap items-center gap-2">
+        <button
+          type="button"
+          onClick={handleValidate}
+          disabled={!batch?.batchId}
+          className="rounded-md bg-gray-700 px-3 py-1.5 text-xs font-semibold text-white hover:bg-gray-800 disabled:opacity-50"
+        >
+          Validate
+        </button>
+        <button
+          type="button"
+          onClick={handleDryRun}
+          disabled={!batch?.batchId}
+          className="rounded-md bg-indigo-600 px-3 py-1.5 text-xs font-semibold text-white hover:bg-indigo-700 disabled:opacity-50"
+        >
+          (Preview) Dry-run materialize
+        </button>
+        <button
+          type="button"
+          onClick={handlePersist}
+          disabled={!batch?.batchId || persisting || !audienceName?.trim()}
+          className="rounded-md bg-green-600 px-3 py-1.5 text-xs font-semibold text-white hover:bg-green-700 disabled:opacity-50"
+        >
+          {persisting
+            ? "Persisting…"
+            : "Persist (create audience + recipients)"}
+        </button>
+      </div>
+
+      {/* Validation result */}
+      {valRes && (
+        <div className="mt-3 rounded-lg border border-amber-200 bg-amber-50 p-3 text-xs text-amber-900">
+          <div className="font-semibold">Validation</div>
+          {Array.isArray(valRes.problems) && valRes.problems.length > 0 ? (
+            <ul className="mt-1 list-disc pl-5">
+              {valRes.problems.map((p, i) => (
+                <li key={i}>{p}</li>
+              ))}
+            </ul>
+          ) : (
+            <div className="mt-1 text-green-700">No problems found.</div>
+          )}
+        </div>
+      )}
+
+      {/* Dry-run preview */}
+      {dryPreview && (
+        <div className="mt-3 rounded-lg border border-sky-200 bg-sky-50 p-3 text-xs text-sky-900">
+          <div className="font-semibold">Dry-run preview</div>
+          <pre className="mt-1 overflow-x-auto rounded bg-white p-2 text-[11px] text-gray-800">
+            {JSON.stringify(dryPreview, null, 2)}
+          </pre>
+        </div>
+      )}
+    </section>
+  );
+}
+
+// // src/pages/Campaigns/components/CsvAudienceSection.jsx
+// import React, { useEffect, useMemo, useRef, useState } from "react";
+// import { toast } from "react-toastify";
+// import {
+//   fetchCsvSchema,
+//   downloadCsvSampleBlob,
+//   uploadCsvBatch,
+//   getBatchSample,
+//   validateBatch,
+//   suggestMappings,
+//   saveMappings,
+//   materialize,
+// } from "../api/csvApi";
+
+// function saveBlob(blob, filename) {
+//   const url = window.URL.createObjectURL(blob);
+//   const a = document.createElement("a");
+//   a.href = url;
+//   a.download = filename;
+//   a.click();
+//   window.URL.revokeObjectURL(url);
+// }
+
+// export default function CsvAudienceSection({ campaignId }) {
+//   const [loading, setLoading] = useState(true);
+//   const [schema, setSchema] = useState(null);
+
+//   const [batch, setBatch] = useState(null); // { batchId, headerJson, ... }
+//   const [sample, setSample] = useState(null); // { headers, rows }
+//   const [valReq, setValReq] = useState({
+//     normalizePhone: true,
+//     checkDuplicates: true,
+//   });
+//   const [valRes, setValRes] = useState(null);
+
+//   const [paramMappings, setParamMappings] = useState([]);
+//   const [phoneHeader, setPhoneHeader] = useState("");
+//   const [audienceName, setAudienceName] = useState(() => {
+//     const d = new Date();
+//     const yyyy = d.getFullYear();
+//     const mm = String(d.getMonth() + 1).padStart(2, "0");
+//     const dd = String(d.getDate()).padStart(2, "0");
+//     return `Audience ${yyyy}-${mm}-${dd}`;
+//   });
+
+//   const [dryPreview, setDryPreview] = useState(null);
+//   const [persisting, setPersisting] = useState(false);
+
+//   const topRef = useRef(null);
+
+//   useEffect(() => {
+//     let alive = true;
+//     (async () => {
+//       try {
+//         setLoading(true);
+//         const sc = await fetchCsvSchema(campaignId);
+//         if (!alive) return;
+//         setSchema(sc);
+
+//         const N = Number(sc?.placeholderCount || 0);
+//         setParamMappings(
+//           Array.from({ length: N }, (_, i) => ({
+//             index: i + 1,
+//             sourceType: "csv",
+//             sourceName: "",
+//             constValue: "",
+//           }))
+//         );
+//       } catch {
+//         toast.error("Failed to load CSV schema.");
+//       } finally {
+//         if (alive) setLoading(false);
+//       }
+//     })();
+//     return () => {
+//       alive = false;
+//     };
+//   }, [campaignId]);
+
+//   const csvHeaders = useMemo(
+//     () => sample?.headers ?? batch?.headerJson ?? schema?.headers ?? [],
+//     [schema, batch, sample]
+//   );
+
+//   const updateMapping = (idx, patch) =>
+//     setParamMappings(prev => {
+//       const next = [...prev];
+//       next[idx] = { ...next[idx], ...patch };
+//       return next;
+//     });
+
+//   const handleDownloadSample = async () => {
+//     try {
+//       const blob = await downloadCsvSampleBlob(campaignId);
+//       saveBlob(blob, `campaign-${campaignId}-sample.csv`);
+//     } catch {
+//       toast.error("Could not download sample CSV.");
+//     }
+//   };
+
+//   const handleFile = async f => {
+//     if (!f) return;
+//     try {
+//       const up = await uploadCsvBatch(f, null);
+//       setBatch(up);
+//       toast.success("CSV uploaded.");
+
+//       const s = await getBatchSample(up?.batchId, 10);
+//       setSample(s);
+
+//       const hdrs = Array.isArray(s?.headers) ? s.headers : [];
+//       const lower = hdrs.map(h => String(h).toLowerCase());
+//       const guessIdx = lower.findIndex(h =>
+//         ["phone", "mobile", "whatsapp", "number", "phonee164"].some(k =>
+//           h.includes(k)
+//         )
+//       );
+//       setPhoneHeader(guessIdx >= 0 ? hdrs[guessIdx] : "");
+
+//       try {
+//         const sugg = await suggestMappings(campaignId, up?.batchId);
+//         if (Array.isArray(sugg?.items)) {
+//           setParamMappings(prev =>
+//             prev.map(p => {
+//               const m = sugg.items.find(x => x.index === p.index);
+//               return m ? { ...p, ...m } : p;
+//             })
+//           );
+//         }
+//       } catch {
+//         /* optional */
+//       }
+//     } catch (e) {
+//       toast.error(e?.message || "CSV upload failed.");
+//     }
+//   };
+
+//   const handleValidate = async () => {
+//     if (!batch?.batchId) return toast.warn("Upload a CSV first.");
+//     if (!phoneHeader) return toast.warn("Choose the phone column.");
+
+//     try {
+//       const req = {
+//         phoneHeader,
+//         requiredHeaders: [], // params may be constants
+//         normalizePhone: !!valReq.normalizePhone,
+//         checkDuplicates: !!valReq.checkDuplicates,
+//       };
+//       const res = await validateBatch(batch.batchId, req);
+//       setValRes(res);
+//       if (Array.isArray(res?.problems) && res.problems.length > 0) {
+//         toast.warn(`Validation found ${res.problems.length} issue(s).`);
+//       } else {
+//         toast.success("Validation passed.");
+//       }
+//     } catch {
+//       toast.error("Validation call failed.");
+//     }
+//   };
+
+//   // Dictionary the backend expects for mappings (eg { "{{1}}": "Nicolus", "{{2}}": "Email" }).
+//   const buildMappingDict = () => {
+//     const dict = {};
+//     for (const m of paramMappings) {
+//       const key = `{{${m.index}}}`;
+//       if (m.sourceType === "csv") {
+//         dict[key] = m.sourceName || "";
+//       } else {
+//         // IMPORTANT: backend expects "constant:" prefix
+//         dict[key] = `constant:${m.constValue ?? ""}`;
+//       }
+//     }
+//     return dict;
+//   };
+//   const handleDryRun = async () => {
+//     if (!batch?.batchId) return toast.warn("Upload a CSV first.");
+
+//     try {
+//       await saveMappings(campaignId, buildMappingDict()); // optional
+
+//       const body = {
+//         csvBatchId: batch.batchId,
+//         mappings: buildMappingDict(),
+//         phoneField: phoneHeader || undefined,
+//         normalizePhones: !!valReq.normalizePhone,
+//         deduplicate: !!valReq.checkDuplicates,
+//         persist: false, // <-- preview only
+//         audienceName: undefined, // <-- not needed for preview
+//       };
+
+//       const preview = await materialize(campaignId, body);
+//       setDryPreview(preview);
+//       toast.success("Dry-run ready.");
+//     } catch {
+//       toast.error("Dry-run failed.");
+//     }
+//   };
+
+//   const handlePersist = async () => {
+//     if (!batch?.batchId) return toast.warn("Upload a CSV first.");
+//     if (!audienceName?.trim()) return toast.warn("Enter an audience name.");
+
+//     setPersisting(true);
+//     try {
+//       await saveMappings(campaignId, buildMappingDict()); // optional
+
+//       const body = {
+//         csvBatchId: batch.batchId,
+//         mappings: buildMappingDict(),
+//         phoneField: phoneHeader || undefined,
+//         normalizePhones: !!valReq.normalizePhone,
+//         deduplicate: !!valReq.checkDuplicates,
+//         persist: true, // <-- REQUIRED
+//         audienceName: audienceName.trim(),
+//       };
+
+//       const result = await materialize(campaignId, body);
+//       toast.success("Audience created and recipients materialized.");
+//       // result.audienceId will be set on success
+//     } catch {
+//       toast.error("Persist failed.");
+//     } finally {
+//       setPersisting(false);
+//     }
+//   };
+
+//   if (loading) {
+//     return (
+//       <div className="rounded-lg border bg-white p-4 text-sm text-gray-500">
+//         Loading CSV schema…
+//       </div>
+//     );
+//   }
+
+//   return (
+//     <section ref={topRef} className="rounded-xl border bg-white p-4 shadow-sm">
+//       <h2 className="mb-3 text-sm font-semibold text-gray-800">
+//         Audience via CSV
+//       </h2>
+
+//       {/* Audience name */}
+//       <div className="mb-3">
+//         <input
+//           className="w-full rounded-lg border px-3 py-2 text-sm outline-none focus:border-purple-500"
+//           placeholder="Audience name (required to persist)"
+//           value={audienceName}
+//           onChange={e => setAudienceName(e.target.value)}
+//         />
+//       </div>
+
+//       {/* Header row: expected columns + actions */}
+//       <div className="mb-4 flex flex-wrap items-center gap-3 text-sm">
+//         <div className="text-gray-600">
+//           Expected columns:&nbsp;
+//           <code className="rounded bg-gray-100 px-1.5 py-0.5">
+//             {Array.isArray(schema?.headers) ? schema.headers.join(", ") : "—"}
+//           </code>
+//         </div>
+//         <button
+//           type="button"
+//           onClick={handleDownloadSample}
+//           className="rounded-md bg-indigo-600 px-3 py-1.5 text-xs font-semibold text-white hover:bg-indigo-700"
+//         >
+//           Download sample CSV
+//         </button>
+//         <label className="ml-auto cursor-pointer text-indigo-600 hover:underline">
+//           Upload CSV
+//           <input
+//             type="file"
+//             accept=".csv"
+//             onChange={e => handleFile(e.target.files?.[0])}
+//             className="hidden"
+//           />
+//         </label>
+//       </div>
+
+//       {/* Phone + toggles and parameter mapping */}
+//       <div className="grid gap-3 md:grid-cols-2">
+//         <div className="rounded-lg border p-3">
+//           <h3 className="mb-2 text-xs font-semibold text-gray-700">
+//             Phone column
+//           </h3>
+//           <select
+//             className="w-full rounded-lg border px-3 py-2 text-sm outline-none focus:border-purple-500"
+//             value={phoneHeader}
+//             onChange={e => setPhoneHeader(e.target.value)}
+//             disabled={!(csvHeaders ?? []).length}
+//           >
+//             <option value="">
+//               {(csvHeaders ?? []).length
+//                 ? "-- Select column --"
+//                 : "Upload a CSV first"}
+//             </option>
+//             {(csvHeaders ?? []).map(h => (
+//               <option key={h} value={h}>
+//                 {h}
+//               </option>
+//             ))}
+//           </select>
+
+//           <div className="mt-3 flex items-center gap-4 text-xs text-gray-700">
+//             <label className="inline-flex items-center gap-2">
+//               <input
+//                 type="checkbox"
+//                 checked={valReq.normalizePhone}
+//                 onChange={e =>
+//                   setValReq(v => ({ ...v, normalizePhone: e.target.checked }))
+//                 }
+//               />
+//               Normalize phone (E.164)
+//             </label>
+//             <label className="inline-flex items-center gap-2">
+//               <input
+//                 type="checkbox"
+//                 checked={valReq.checkDuplicates}
+//                 onChange={e =>
+//                   setValReq(v => ({ ...v, checkDuplicates: e.target.checked }))
+//                 }
+//               />
+//               Deduplicate by phone
+//             </label>
+//           </div>
+//         </div>
+
+//         <div className="rounded-lg border p-3">
+//           <h3 className="mb-2 text-xs font-semibold text-gray-700">
+//             Template parameters
+//           </h3>
+//           {paramMappings.length === 0 ? (
+//             <p className="text-sm text-gray-500">
+//               No parameters required for this template.
+//             </p>
+//           ) : (
+//             <div className="space-y-2">
+//               {paramMappings.map((m, i) => (
+//                 <div
+//                   key={m.index}
+//                   className="grid grid-cols-[80px,100px,1fr] items-center gap-2"
+//                 >
+//                   <div className="text-xs text-gray-500">{`{{${m.index}}}`}</div>
+//                   <select
+//                     className="rounded-lg border px-2 py-1.5 text-xs outline-none focus:border-purple-500"
+//                     value={m.sourceType}
+//                     onChange={e =>
+//                       updateMapping(i, { sourceType: e.target.value })
+//                     }
+//                   >
+//                     <option value="csv">CSV column</option>
+//                     <option value="const">Constant</option>
+//                   </select>
+
+//                   {m.sourceType === "csv" ? (
+//                     <select
+//                       className="w-full rounded-lg border px-2 py-1.5 text-xs outline-none focus:border-purple-500"
+//                       value={m.sourceName || ""}
+//                       onChange={e =>
+//                         updateMapping(i, { sourceName: e.target.value })
+//                       }
+//                       disabled={!(csvHeaders ?? []).length}
+//                     >
+//                       <option value="">
+//                         {(csvHeaders ?? []).length
+//                           ? "-- Select column --"
+//                           : "Upload CSV"}
+//                       </option>
+//                       {(csvHeaders ?? []).map(h => (
+//                         <option key={h} value={h}>
+//                           {h}
+//                         </option>
+//                       ))}
+//                     </select>
+//                   ) : (
+//                     <input
+//                       className="w-full rounded-lg border px-2 py-1.5 text-xs outline-none focus:border-purple-500"
+//                       placeholder="Constant value"
+//                       value={m.constValue || ""}
+//                       onChange={e =>
+//                         updateMapping(i, { constValue: e.target.value })
+//                       }
+//                     />
+//                   )}
+//                 </div>
+//               ))}
+//             </div>
+//           )}
+//         </div>
+//       </div>
+
+//       {/* Sample table */}
+//       <div className="mt-4 overflow-x-auto rounded-lg border">
+//         <table className="min-w-full text-xs">
+//           <thead className="bg-gray-100 text-gray-700">
+//             <tr>
+//               {(sample?.headers ?? csvHeaders ?? []).map(h => (
+//                 <th key={h} className="px-3 py-2 text-left">
+//                   {h}
+//                 </th>
+//               ))}
+//             </tr>
+//           </thead>
+//           <tbody>
+//             {Array.isArray(sample?.rows) && sample.rows.length > 0 ? (
+//               sample.rows.map((row, idx) => (
+//                 <tr key={idx} className="border-t">
+//                   {(sample?.headers ?? csvHeaders ?? []).map(h => (
+//                     <td key={h} className="px-3 py-1.5">
+//                       {row?.[h] ?? ""}
+//                     </td>
+//                   ))}
+//                 </tr>
+//               ))
+//             ) : (
+//               <tr>
+//                 <td
+//                   className="px-3 py-2 text-gray-400"
+//                   colSpan={(csvHeaders ?? []).length || 1}
+//                 >
+//                   No rows yet
+//                 </td>
+//               </tr>
+//             )}
+//           </tbody>
+//         </table>
+//       </div>
+
+//       {/* Actions */}
+//       <div className="mt-4 flex flex-wrap items-center gap-2">
+//         <button
+//           type="button"
+//           onClick={handleValidate}
+//           disabled={!batch?.batchId}
+//           className="rounded-md bg-gray-700 px-3 py-1.5 text-xs font-semibold text-white hover:bg-gray-800 disabled:opacity-50"
+//         >
+//           Validate
+//         </button>
+//         <button
+//           type="button"
+//           onClick={handleDryRun}
+//           disabled={!batch?.batchId}
+//           className="rounded-md bg-indigo-600 px-3 py-1.5 text-xs font-semibold text-white hover:bg-indigo-700 disabled:opacity-50"
+//         >
+//           (Preview) Dry-run materialize
+//         </button>
+//         <button
+//           type="button"
+//           onClick={handlePersist}
+//           disabled={!batch?.batchId || persisting || !audienceName?.trim()}
+//           className="rounded-md bg-green-600 px-3 py-1.5 text-xs font-semibold text-white hover:bg-green-700 disabled:opacity-50"
+//         >
+//           {persisting
+//             ? "Persisting…"
+//             : "Persist (create audience + recipients)"}
+//         </button>
+//       </div>
+
+//       {/* Validation result */}
+//       {valRes && (
+//         <div className="mt-3 rounded-lg border border-amber-200 bg-amber-50 p-3 text-xs text-amber-900">
+//           <div className="font-semibold">Validation</div>
+//           {Array.isArray(valRes.problems) && valRes.problems.length > 0 ? (
+//             <ul className="mt-1 list-disc pl-5">
+//               {valRes.problems.map((p, i) => (
+//                 <li key={i}>{p}</li>
+//               ))}
+//             </ul>
+//           ) : (
+//             <div className="mt-1 text-green-700">No problems found.</div>
+//           )}
+//         </div>
+//       )}
+
+//       {/* Dry-run preview */}
+//       {dryPreview && (
+//         <div className="mt-3 rounded-lg border border-sky-200 bg-sky-50 p-3 text-xs text-sky-900">
+//           <div className="font-semibold">Dry-run preview</div>
+//           <pre className="mt-1 overflow-x-auto rounded bg-white p-2 text-[11px] text-gray-800">
+//             {JSON.stringify(dryPreview, null, 2)}
+//           </pre>
+//         </div>
+//       )}
+//     </section>
+//   );
+// }
+
+// // src/pages/Campaigns/components/CsvAudienceSection.jsx
+// import React, { useEffect, useMemo, useRef, useState } from "react";
+// import { toast } from "react-toastify";
+// import {
+//   fetchCsvSchema,
+//   downloadCsvSampleBlob,
+//   uploadCsvBatch,
+//   getBatchSample,
+//   validateBatch,
+//   suggestMappings,
+//   saveMappings,
+//   materialize,
+// } from "../api/csvApi";
+
+// // Small helper to download a Blob as a file
+// function saveBlob(blob, filename) {
+//   const url = window.URL.createObjectURL(blob);
+//   const a = document.createElement("a");
+//   a.href = url;
+//   a.download = filename;
+//   a.click();
+//   window.URL.revokeObjectURL(url);
+// }
+
+// /**
+//  * CsvAudienceSection
+//  * Drives the end-to-end bulk personalization flow for a campaign.
+//  */
+// export default function CsvAudienceSection({ campaignId }) {
+//   const [loading, setLoading] = useState(true);
+//   const [schema, setSchema] = useState(null); // { headers, placeholderCount, parameterNames? }
+
+//   const [batch, setBatch] = useState(null); // { batchId, headerJson, ... }
+//   const [sample, setSample] = useState(null); // { headers, rows }
+//   const [valReq, setValReq] = useState({
+//     normalizePhone: true,
+//     checkDuplicates: true,
+//   });
+//   const [valRes, setValRes] = useState(null);
+
+//   // { index:1, sourceType:"csv"|"const", sourceName:"", constValue:"" }
+//   const [paramMappings, setParamMappings] = useState([]);
+//   const [phoneHeader, setPhoneHeader] = useState("");
+//   const [dryPreview, setDryPreview] = useState(null);
+//   const [persisting, setPersisting] = useState(false);
+
+//   const topRef = useRef(null);
+
+//   // Load schema
+//   useEffect(() => {
+//     let isMounted = true;
+//     (async () => {
+//       try {
+//         setLoading(true);
+//         const sc = await fetchCsvSchema(campaignId);
+//         if (!isMounted) return;
+//         setSchema(sc);
+
+//         const N = Number(sc?.placeholderCount || 0);
+//         const initial = Array.from({ length: N }, (_, i) => ({
+//           index: i + 1,
+//           sourceType: "csv",
+//           sourceName: "",
+//           constValue: "",
+//         }));
+//         setParamMappings(initial);
+//       } catch {
+//         toast.error("Failed to load CSV schema.");
+//       } finally {
+//         if (isMounted) setLoading(false);
+//       }
+//     })();
+//     return () => {
+//       isMounted = false;
+//     };
+//   }, [campaignId]);
+
+//   // Prefer most concrete headers: sample.headers -> batch.headerJson -> schema.headers
+//   const csvHeaders = useMemo(
+//     () => sample?.headers ?? batch?.headerJson ?? schema?.headers ?? [],
+//     [schema, batch, sample]
+//   );
+
+//   // Update mapping helper
+//   const updateMapping = (idxZero, patch) => {
+//     setParamMappings(prev => {
+//       const next = [...prev];
+//       next[idxZero] = { ...next[idxZero], ...patch };
+//       return next;
+//     });
+//   };
+
+//   // Download one-line sample (server builds correct headers)
+//   const handleDownloadSample = async () => {
+//     try {
+//       const blob = await downloadCsvSampleBlob(campaignId);
+//       saveBlob(blob, `campaign-${campaignId}-sample.csv`);
+//     } catch {
+//       toast.error("Could not download sample CSV.");
+//     }
+//   };
+
+//   // Upload CSV -> create CsvBatch -> load first rows -> try mapping suggestions
+//   const handleFile = async f => {
+//     if (!f) return;
+//     try {
+//       const up = await uploadCsvBatch(f, null);
+//       setBatch(up);
+//       toast.success("CSV uploaded.");
+
+//       const s = await getBatchSample(up?.batchId, 10);
+//       setSample(s);
+
+//       // Guess phone column by common names (guard headers)
+//       const hdrs = Array.isArray(s?.headers) ? s.headers : [];
+//       const lower = hdrs.map(h => String(h).toLowerCase());
+//       const guessIdx = lower.findIndex(h =>
+//         ["phone", "mobile", "whatsapp", "number", "phonee164"].some(k =>
+//           h.includes(k)
+//         )
+//       );
+//       setPhoneHeader(guessIdx >= 0 ? hdrs[guessIdx] : "");
+
+//       // Optional: backend suggestions to pre-fill param mappings
+//       try {
+//         const sugg = await suggestMappings(campaignId, up?.batchId);
+//         if (Array.isArray(sugg?.items)) {
+//           setParamMappings(prev =>
+//             prev.map(p => {
+//               const m = sugg.items.find(x => x.index === p.index);
+//               return m ? { ...p, ...m } : p;
+//             })
+//           );
+//         }
+//       } catch {
+//         /* suggestions are optional */
+//       }
+//     } catch (e) {
+//       toast.error(e?.message || "CSV upload failed.");
+//     }
+//   };
+
+//   // Validate phones & duplicates
+//   const handleValidate = async () => {
+//     if (!batch?.batchId) return toast.warn("Upload a CSV first.");
+//     if (!phoneHeader) return toast.warn("Choose the phone column.");
+
+//     try {
+//       const req = {
+//         phoneHeader,
+//         requiredHeaders: [], // params may be constants
+//         normalizePhone: !!valReq.normalizePhone,
+//         checkDuplicates: !!valReq.checkDuplicates,
+//       };
+//       const res = await validateBatch(batch.batchId, req);
+//       setValRes(res);
+//       if (Array.isArray(res?.problems) && res.problems.length > 0) {
+//         toast.warn(`Validation found ${res.problems.length} issue(s).`);
+//       } else {
+//         toast.success("Validation passed.");
+//       }
+//     } catch {
+//       toast.error("Validation call failed.");
+//     }
+//   };
+
+//   // ---- NEW: build backend-friendly dictionary for mappings ----
+//   // /mappings endpoint expects Dictionary<string,string> like:
+//   // { "{{1}}": "Nicolus", "{{2}}": "Email" }
+//   // For constants, we encode as "const:<value>" so backend can distinguish.
+//   const buildMappingDict = () => {
+//     const dict = {};
+//     for (const m of paramMappings) {
+//       const key = `{{${m.index}}}`;
+//       if (m.sourceType === "csv") {
+//         dict[key] = m.sourceName || "";
+//       } else {
+//         dict[key] = `const:${m.constValue ?? ""}`;
+//       }
+//     }
+//     return dict;
+//   };
+
+//   // Dry-run (no DB writes)
+//   const handleDryRun = async () => {
+//     if (!batch?.batchId) return toast.warn("Upload a CSV first.");
+//     if (!phoneHeader) return toast.warn("Choose the phone column.");
+
+//     try {
+//       // Persist mapping config (Dictionary<string,string>)
+//       await saveMappings(campaignId, buildMappingDict());
+
+//       const body = {
+//         mode: "dryRun",
+//         //batchId: batch.batchId,
+//         csvBatchId: batch.batchId,
+//         normalizePhone: !!valReq.normalizePhone,
+//         deduplicate: !!valReq.checkDuplicates,
+//         phoneHeader,
+//         // Use the same dictionary shape for materialize
+//         mappings: buildMappingDict(),
+//       };
+//       const preview = await materialize(campaignId, body);
+//       setDryPreview(preview);
+//       toast.success("Dry-run ready.");
+//       topRef.current?.scrollIntoView({ behavior: "smooth" });
+//     } catch {
+//       toast.error("Dry-run failed.");
+//     }
+//   };
+
+//   // Commit (creates Audience + AudienceMembers + CampaignRecipients)
+//   const handlePersist = async () => {
+//     if (!batch?.batchId) return toast.warn("Upload a CSV first.");
+//     setPersisting(true);
+//     try {
+//       // Keep mappings in sync
+//       await saveMappings(campaignId, buildMappingDict());
+
+//       const body = {
+//         mode: "commit",
+//         csvBatchId: batch.batchId,
+//         normalizePhone: !!valReq.normalizePhone,
+//         deduplicate: !!valReq.checkDuplicates,
+//         phoneHeader,
+//         mappings: buildMappingDict(),
+//       };
+//       await materialize(campaignId, body);
+//       toast.success("Audience created and recipients materialized.");
+//     } catch {
+//       toast.error("Persist failed.");
+//     } finally {
+//       setPersisting(false);
+//     }
+//   };
+
+//   if (loading) {
+//     return (
+//       <div className="rounded-lg border bg-white p-4 text-sm text-gray-500">
+//         Loading CSV schema…
+//       </div>
+//     );
+//   }
+
+//   return (
+//     <section ref={topRef} className="rounded-xl border bg-white p-4 shadow-sm">
+//       <h2 className="mb-3 text-sm font-semibold text-gray-800">
+//         Audience via CSV
+//       </h2>
+
+//       {/* Header: expected columns + actions */}
+//       <div className="mb-4 flex flex-wrap items-center gap-3 text-sm">
+//         <div className="text-gray-600">
+//           Expected columns:&nbsp;
+//           <code className="rounded bg-gray-100 px-1.5 py-0.5">
+//             {Array.isArray(schema?.headers) ? schema.headers.join(", ") : "—"}
+//           </code>
+//         </div>
+//         <button
+//           type="button"
+//           onClick={handleDownloadSample}
+//           className="rounded-md bg-indigo-600 px-3 py-1.5 text-xs font-semibold text-white hover:bg-indigo-700"
+//         >
+//           Download sample CSV
+//         </button>
+//         <label className="ml-auto cursor-pointer text-indigo-600 hover:underline">
+//           Upload CSV
+//           <input
+//             type="file"
+//             accept=".csv"
+//             onChange={e => handleFile(e.target.files?.[0])}
+//             className="hidden"
+//           />
+//         </label>
+//       </div>
+
+//       {/* Phone + toggles */}
+//       <div className="grid gap-3 md:grid-cols-2">
+//         <div className="rounded-lg border p-3">
+//           <h3 className="mb-2 text-xs font-semibold text-gray-700">
+//             Phone column
+//           </h3>
+//           <select
+//             className="w-full rounded-lg border px-3 py-2 text-sm outline-none focus:border-purple-500"
+//             value={phoneHeader}
+//             onChange={e => setPhoneHeader(e.target.value)}
+//             disabled={!(csvHeaders ?? []).length}
+//           >
+//             <option value="">
+//               {(csvHeaders ?? []).length
+//                 ? "-- Select column --"
+//                 : "Upload a CSV first"}
+//             </option>
+//             {(csvHeaders ?? []).map(h => (
+//               <option key={h} value={h}>
+//                 {h}
+//               </option>
+//             ))}
+//           </select>
+
+//           <div className="mt-3 flex items-center gap-4 text-xs text-gray-700">
+//             <label className="inline-flex items-center gap-2">
+//               <input
+//                 type="checkbox"
+//                 checked={valReq.normalizePhone}
+//                 onChange={e =>
+//                   setValReq(v => ({ ...v, normalizePhone: e.target.checked }))
+//                 }
+//               />
+//               Normalize phone (E.164)
+//             </label>
+//             <label className="inline-flex items-center gap-2">
+//               <input
+//                 type="checkbox"
+//                 checked={valReq.checkDuplicates}
+//                 onChange={e =>
+//                   setValReq(v => ({ ...v, checkDuplicates: e.target.checked }))
+//                 }
+//               />
+//               Deduplicate by phone
+//             </label>
+//           </div>
+//         </div>
+
+//         {/* Param mappings */}
+//         <div className="rounded-lg border p-3">
+//           <h3 className="mb-2 text-xs font-semibold text-gray-700">
+//             Template parameters
+//           </h3>
+//           {paramMappings.length === 0 ? (
+//             <p className="text-sm text-gray-500">
+//               No parameters required for this template.
+//             </p>
+//           ) : (
+//             <div className="space-y-2">
+//               {paramMappings.map((m, i) => (
+//                 <div
+//                   key={m.index}
+//                   className="grid grid-cols-[80px,100px,1fr] items-center gap-2"
+//                 >
+//                   <div className="text-xs text-gray-500">{`{{${m.index}}}`}</div>
+//                   <select
+//                     className="rounded-lg border px-2 py-1.5 text-xs outline-none focus:border-purple-500"
+//                     value={m.sourceType}
+//                     onChange={e =>
+//                       updateMapping(i, { sourceType: e.target.value })
+//                     }
+//                   >
+//                     <option value="csv">CSV column</option>
+//                     <option value="const">Constant</option>
+//                   </select>
+
+//                   {m.sourceType === "csv" ? (
+//                     <select
+//                       className="w-full rounded-lg border px-2 py-1.5 text-xs outline-none focus:border-purple-500"
+//                       value={m.sourceName || ""}
+//                       onChange={e =>
+//                         updateMapping(i, { sourceName: e.target.value })
+//                       }
+//                       disabled={!(csvHeaders ?? []).length}
+//                     >
+//                       <option value="">
+//                         {(csvHeaders ?? []).length
+//                           ? "-- Select column --"
+//                           : "Upload CSV"}
+//                       </option>
+//                       {(csvHeaders ?? []).map(h => (
+//                         <option key={h} value={h}>
+//                           {h}
+//                         </option>
+//                       ))}
+//                     </select>
+//                   ) : (
+//                     <input
+//                       className="w-full rounded-lg border px-2 py-1.5 text-xs outline-none focus:border-purple-500"
+//                       placeholder="Constant value"
+//                       value={m.constValue || ""}
+//                       onChange={e =>
+//                         updateMapping(i, { constValue: e.target.value })
+//                       }
+//                     />
+//                   )}
+//                 </div>
+//               ))}
+//             </div>
+//           )}
+//         </div>
+//       </div>
+
+//       {/* Sample table */}
+//       <div className="mt-4 overflow-x-auto rounded-lg border">
+//         <table className="min-w-full text-xs">
+//           <thead className="bg-gray-100 text-gray-700">
+//             <tr>
+//               {(sample?.headers ?? csvHeaders ?? []).map(h => (
+//                 <th key={h} className="px-3 py-2 text-left">
+//                   {h}
+//                 </th>
+//               ))}
+//             </tr>
+//           </thead>
+//         </table>
+
+//         {/* simple body for preview */}
+//         <table className="min-w-full text-xs">
+//           <tbody>
+//             {Array.isArray(sample?.rows) && sample.rows.length > 0 ? (
+//               sample.rows.map((row, idx) => (
+//                 <tr key={idx} className="border-t">
+//                   {(sample?.headers ?? csvHeaders ?? []).map(h => (
+//                     <td key={h} className="px-3 py-1.5">
+//                       {row?.[h] ?? ""}
+//                     </td>
+//                   ))}
+//                 </tr>
+//               ))
+//             ) : (
+//               <tr>
+//                 <td
+//                   className="px-3 py-2 text-gray-400"
+//                   colSpan={(csvHeaders ?? []).length || 1}
+//                 >
+//                   No rows yet
+//                 </td>
+//               </tr>
+//             )}
+//           </tbody>
+//         </table>
+//       </div>
+
+//       {/* Actions */}
+//       <div className="mt-4 flex flex-wrap items-center gap-2">
+//         <button
+//           type="button"
+//           onClick={handleValidate}
+//           disabled={!batch?.batchId}
+//           className="rounded-md bg-gray-700 px-3 py-1.5 text-xs font-semibold text-white hover:bg-gray-800 disabled:opacity-50"
+//         >
+//           Validate
+//         </button>
+//         <button
+//           type="button"
+//           onClick={handleDryRun}
+//           disabled={!batch?.batchId}
+//           className="rounded-md bg-indigo-600 px-3 py-1.5 text-xs font-semibold text-white hover:bg-indigo-700 disabled:opacity-50"
+//         >
+//           (Preview) Dry-run materialize
+//         </button>
+//         <button
+//           type="button"
+//           onClick={handlePersist}
+//           disabled={!batch?.batchId || persisting}
+//           className="rounded-md bg-green-600 px-3 py-1.5 text-xs font-semibold text-white hover:bg-green-700 disabled:opacity-50"
+//         >
+//           {persisting
+//             ? "Persisting…"
+//             : "Persist (create audience + recipients)"}
+//         </button>
+//       </div>
+
+//       {/* Validation result */}
+//       {valRes && (
+//         <div className="mt-3 rounded-lg border border-amber-200 bg-amber-50 p-3 text-xs text-amber-900">
+//           <div className="font-semibold">Validation</div>
+//           {Array.isArray(valRes.problems) && valRes.problems.length > 0 ? (
+//             <ul className="mt-1 list-disc pl-5">
+//               {valRes.problems.map((p, i) => (
+//                 <li key={i}>{p}</li>
+//               ))}
+//             </ul>
+//           ) : (
+//             <div className="mt-1 text-green-700">No problems found.</div>
+//           )}
+//         </div>
+//       )}
+
+//       {/* Dry-run preview */}
+//       {dryPreview && (
+//         <div className="mt-3 rounded-lg border border-sky-200 bg-sky-50 p-3 text-xs text-sky-900">
+//           <div className="font-semibold">Dry-run preview</div>
+//           <pre className="mt-1 overflow-x-auto rounded bg-white p-2 text-[11px] text-gray-800">
+//             {JSON.stringify(dryPreview, null, 2)}
+//           </pre>
+//         </div>
+//       )}
+//     </section>
+//   );
+// }
+
+// // src/pages/Campaigns/components/CsvAudienceSection.jsx
+// import React, { useEffect, useMemo, useRef, useState } from "react";
+// import { toast } from "react-toastify";
+// import {
+//   fetchCsvSchema,
+//   downloadCsvSampleBlob,
+//   uploadCsvBatch,
+//   getBatchSample,
+//   validateBatch,
+//   suggestMappings,
+//   saveMappings,
+//   materialize,
+// } from "../api/csvApi";
+
+// // Small helper to download a Blob as a file
+// function saveBlob(blob, filename) {
+//   const url = window.URL.createObjectURL(blob);
+//   const a = document.createElement("a");
+//   a.href = url;
+//   a.download = filename;
+//   a.click();
+//   window.URL.revokeObjectURL(url);
+// }
+
+// /**
+//  * CsvAudienceSection
+//  * Drives the end-to-end bulk personalization flow for a campaign.
+//  */
+// export default function CsvAudienceSection({ campaignId }) {
+//   const [loading, setLoading] = useState(true);
+//   const [schema, setSchema] = useState(null); // { headers, placeholderCount, parameterNames? }
+
+//   const [file, setFile] = useState(null);
+//   const [batch, setBatch] = useState(null); // { batchId, headerJson, ... }
+//   const [sample, setSample] = useState(null); // { headers, rows }
+//   const [valReq, setValReq] = useState({
+//     normalizePhone: true,
+//     checkDuplicates: true,
+//   });
+//   const [valRes, setValRes] = useState(null);
+
+//   // { index:1, sourceType:"csv"|"const", sourceName:"", constValue:"" }
+//   const [paramMappings, setParamMappings] = useState([]);
+//   const [phoneHeader, setPhoneHeader] = useState("");
+//   const [dryPreview, setDryPreview] = useState(null);
+//   const [persisting, setPersisting] = useState(false);
+
+//   const topRef = useRef(null);
+
+//   // Load schema
+//   useEffect(() => {
+//     let isMounted = true;
+//     (async () => {
+//       try {
+//         setLoading(true);
+//         const sc = await fetchCsvSchema(campaignId);
+//         if (!isMounted) return;
+//         setSchema(sc);
+
+//         const N = Number(sc?.placeholderCount || 0);
+//         const initial = Array.from({ length: N }, (_, i) => ({
+//           index: i + 1,
+//           sourceType: "csv",
+//           sourceName: "",
+//           constValue: "",
+//         }));
+//         setParamMappings(initial);
+//       } catch (e) {
+//         toast.error("Failed to load CSV schema.");
+//       } finally {
+//         if (isMounted) setLoading(false);
+//       }
+//     })();
+//     return () => {
+//       isMounted = false;
+//     };
+//   }, [campaignId]);
+
+//   // Prefer most concrete headers: sample.headers -> batch.headerJson -> schema.headers
+//   const csvHeaders = useMemo(
+//     () => sample?.headers ?? batch?.headerJson ?? schema?.headers ?? [],
+//     [schema, batch, sample]
+//   );
+
+//   // Update mapping helper
+//   const updateMapping = (idxZero, patch) => {
+//     setParamMappings(prev => {
+//       const next = [...prev];
+//       next[idxZero] = { ...next[idxZero], ...patch };
+//       return next;
+//     });
+//   };
+
+//   // Download one-line sample (server builds correct headers)
+//   const handleDownloadSample = async () => {
+//     try {
+//       const blob = await downloadCsvSampleBlob(campaignId);
+//       saveBlob(blob, `campaign-${campaignId}-sample.csv`);
+//     } catch {
+//       toast.error("Could not download sample CSV.");
+//     }
+//   };
+
+//   // Upload CSV -> create CsvBatch -> load first rows -> try mapping suggestions
+//   const handleFile = async f => {
+//     if (!f) return;
+//     setFile(f);
+//     try {
+//       const up = await uploadCsvBatch(f, null);
+//       setBatch(up);
+//       toast.success("CSV uploaded.");
+
+//       const s = await getBatchSample(up?.batchId, 10);
+//       setSample(s);
+
+//       // Guess phone column by common names (guard headers)
+//       const hdrs = Array.isArray(s?.headers) ? s.headers : [];
+//       const lower = hdrs.map(h => String(h).toLowerCase());
+//       const guessIdx = lower.findIndex(h =>
+//         ["phone", "mobile", "whatsapp", "number", "phonee164"].some(k =>
+//           h.includes(k)
+//         )
+//       );
+//       setPhoneHeader(guessIdx >= 0 ? hdrs[guessIdx] : "");
+
+//       // Optional: backend suggestions to pre-fill param mappings
+//       try {
+//         const sugg = await suggestMappings(campaignId, up?.batchId);
+//         if (Array.isArray(sugg?.items)) {
+//           setParamMappings(prev =>
+//             prev.map(p => {
+//               const m = sugg.items.find(x => x.index === p.index);
+//               return m ? { ...p, ...m } : p;
+//             })
+//           );
+//         }
+//       } catch {
+//         /* suggestions are optional */
+//       }
+//     } catch (e) {
+//       toast.error(e?.message || "CSV upload failed.");
+//     }
+//   };
+
+//   // Validate phones & duplicates
+//   const handleValidate = async () => {
+//     if (!batch?.batchId) return toast.warn("Upload a CSV first.");
+//     if (!phoneHeader) return toast.warn("Choose the phone column.");
+
+//     try {
+//       const req = {
+//         phoneHeader,
+//         requiredHeaders: [], // params may be constants
+//         normalizePhone: !!valReq.normalizePhone,
+//         checkDuplicates: !!valReq.checkDuplicates,
+//       };
+//       const res = await validateBatch(batch.batchId, req);
+//       setValRes(res);
+//       if (Array.isArray(res?.problems) && res.problems.length > 0) {
+//         toast.warn(`Validation found ${res.problems.length} issue(s).`);
+//       } else {
+//         toast.success("Validation passed.");
+//       }
+//     } catch {
+//       toast.error("Validation call failed.");
+//     }
+//   };
+
+//   // Build DTO we send to saveMappings/materialize
+//   const buildMappingsDto = () => ({
+//     items: paramMappings.map(m => ({
+//       component: "param",
+//       index: m.index,
+//       sourceType: m.sourceType,
+//       sourceName: m.sourceType === "csv" ? m.sourceName || null : null,
+//       constValue: m.sourceType === "const" ? m.constValue ?? "" : null,
+//     })),
+//   });
+
+//   // Dry-run (no DB writes)
+//   const handleDryRun = async () => {
+//     if (!batch?.batchId) return toast.warn("Upload a CSV first.");
+//     if (!phoneHeader) return toast.warn("Choose the phone column.");
+
+//     try {
+//       await saveMappings(campaignId, buildMappingsDto());
+
+//       const body = {
+//         mode: "dryRun",
+//         batchId: batch.batchId,
+//         normalizePhone: !!valReq.normalizePhone,
+//         deduplicate: !!valReq.checkDuplicates,
+//         phoneHeader,
+//         mappings: buildMappingsDto().items,
+//       };
+//       const preview = await materialize(campaignId, body);
+//       setDryPreview(preview);
+//       toast.success("Dry-run ready.");
+//       topRef.current?.scrollIntoView({ behavior: "smooth" });
+//     } catch {
+//       toast.error("Dry-run failed.");
+//     }
+//   };
+
+//   // Commit (creates Audience + AudienceMembers + CampaignRecipients)
+//   const handlePersist = async () => {
+//     if (!batch?.batchId) return toast.warn("Upload a CSV first.");
+//     setPersisting(true);
+//     try {
+//       const body = {
+//         mode: "commit",
+//         batchId: batch.batchId,
+//         normalizePhone: !!valReq.normalizePhone,
+//         deduplicate: !!valReq.checkDuplicates,
+//         phoneHeader,
+//         mappings: buildMappingsDto().items,
+//       };
+//       await materialize(campaignId, body);
+//       toast.success("Audience created and recipients materialized.");
+//     } catch {
+//       toast.error("Persist failed.");
+//     } finally {
+//       setPersisting(false);
+//     }
+//   };
+
+//   if (loading) {
+//     return (
+//       <div className="rounded-lg border bg-white p-4 text-sm text-gray-500">
+//         Loading CSV schema…
+//       </div>
+//     );
+//   }
+
+//   return (
+//     <section ref={topRef} className="rounded-xl border bg-white p-4 shadow-sm">
+//       <h2 className="mb-3 text-sm font-semibold text-gray-800">
+//         Audience via CSV
+//       </h2>
+
+//       {/* Header: expected columns + actions */}
+//       <div className="mb-4 flex flex-wrap items-center gap-3 text-sm">
+//         <div className="text-gray-600">
+//           Expected columns:&nbsp;
+//           <code className="rounded bg-gray-100 px-1.5 py-0.5">
+//             {Array.isArray(schema?.headers) ? schema.headers.join(", ") : "—"}
+//           </code>
+//         </div>
+//         <button
+//           type="button"
+//           onClick={handleDownloadSample}
+//           className="rounded-md bg-indigo-600 px-3 py-1.5 text-xs font-semibold text-white hover:bg-indigo-700"
+//         >
+//           Download sample CSV
+//         </button>
+//         <label className="ml-auto cursor-pointer text-indigo-600 hover:underline">
+//           Upload CSV
+//           <input
+//             type="file"
+//             accept=".csv"
+//             onChange={e => handleFile(e.target.files?.[0])}
+//             className="hidden"
+//           />
+//         </label>
+//       </div>
+
+//       {/* Phone + toggles */}
+//       <div className="grid gap-3 md:grid-cols-2">
+//         <div className="rounded-lg border p-3">
+//           <h3 className="mb-2 text-xs font-semibold text-gray-700">
+//             Phone column
+//           </h3>
+//           <select
+//             className="w-full rounded-lg border px-3 py-2 text-sm outline-none focus:border-purple-500"
+//             value={phoneHeader}
+//             onChange={e => setPhoneHeader(e.target.value)}
+//             disabled={!(csvHeaders ?? []).length}
+//           >
+//             <option value="">
+//               {(csvHeaders ?? []).length
+//                 ? "-- Select column --"
+//                 : "Upload a CSV first"}
+//             </option>
+//             {(csvHeaders ?? []).map(h => (
+//               <option key={h} value={h}>
+//                 {h}
+//               </option>
+//             ))}
+//           </select>
+
+//           <div className="mt-3 flex items-center gap-4 text-xs text-gray-700">
+//             <label className="inline-flex items-center gap-2">
+//               <input
+//                 type="checkbox"
+//                 checked={valReq.normalizePhone}
+//                 onChange={e =>
+//                   setValReq(v => ({ ...v, normalizePhone: e.target.checked }))
+//                 }
+//               />
+//               Normalize phone (E.164)
+//             </label>
+//             <label className="inline-flex items-center gap-2">
+//               <input
+//                 type="checkbox"
+//                 checked={valReq.checkDuplicates}
+//                 onChange={e =>
+//                   setValReq(v => ({ ...v, checkDuplicates: e.target.checked }))
+//                 }
+//               />
+//               Deduplicate by phone
+//             </label>
+//           </div>
+//         </div>
+
+//         {/* Param mappings */}
+//         <div className="rounded-lg border p-3">
+//           <h3 className="mb-2 text-xs font-semibold text-gray-700">
+//             Template parameters
+//           </h3>
+//           {paramMappings.length === 0 ? (
+//             <p className="text-sm text-gray-500">
+//               No parameters required for this template.
+//             </p>
+//           ) : (
+//             <div className="space-y-2">
+//               {paramMappings.map((m, i) => (
+//                 <div
+//                   key={m.index}
+//                   className="grid grid-cols-[80px,100px,1fr] items-center gap-2"
+//                 >
+//                   <div className="text-xs text-gray-500">{`{{${m.index}}}`}</div>
+//                   <select
+//                     className="rounded-lg border px-2 py-1.5 text-xs outline-none focus:border-purple-500"
+//                     value={m.sourceType}
+//                     onChange={e =>
+//                       updateMapping(i, { sourceType: e.target.value })
+//                     }
+//                   >
+//                     <option value="csv">CSV column</option>
+//                     <option value="const">Constant</option>
+//                   </select>
+
+//                   {m.sourceType === "csv" ? (
+//                     <select
+//                       className="w-full rounded-lg border px-2 py-1.5 text-xs outline-none focus:border-purple-500"
+//                       value={m.sourceName || ""}
+//                       onChange={e =>
+//                         updateMapping(i, { sourceName: e.target.value })
+//                       }
+//                       disabled={!(csvHeaders ?? []).length}
+//                     >
+//                       <option value="">
+//                         {(csvHeaders ?? []).length
+//                           ? "-- Select column --"
+//                           : "Upload CSV"}
+//                       </option>
+//                       {(csvHeaders ?? []).map(h => (
+//                         <option key={h} value={h}>
+//                           {h}
+//                         </option>
+//                       ))}
+//                     </select>
+//                   ) : (
+//                     <input
+//                       className="w-full rounded-lg border px-2 py-1.5 text-xs outline-none focus:border-purple-500"
+//                       placeholder="Constant value"
+//                       value={m.constValue || ""}
+//                       onChange={e =>
+//                         updateMapping(i, { constValue: e.target.value })
+//                       }
+//                     />
+//                   )}
+//                 </div>
+//               ))}
+//             </div>
+//           )}
+//         </div>
+//       </div>
+
+//       {/* Sample table */}
+//       <div className="mt-4 overflow-x-auto rounded-lg border">
+//         <table className="min-w-full text-xs">
+//           <thead className="bg-gray-100 text-gray-700">
+//             <tr>
+//               {(sample?.headers ?? csvHeaders ?? []).map(h => (
+//                 <th key={h} className="px-3 py-2 text-left">
+//                   {h}
+//                 </th>
+//               ))}
+//             </tr>
+//           </thead>
+//           <tbody>
+//             {Array.isArray(sample?.rows) && sample.rows.length > 0 ? (
+//               sample.rows.map((row, idx) => (
+//                 <tr key={idx} className="border-t">
+//                   {(sample?.headers ?? csvHeaders ?? []).map(h => (
+//                     <td key={h} className="px-3 py-1.5">
+//                       {row?.[h] ?? ""}
+//                     </td>
+//                   ))}
+//                 </tr>
+//               ))
+//             ) : (
+//               <tr>
+//                 <td
+//                   className="px-3 py-2 text-gray-400"
+//                   colSpan={(csvHeaders ?? []).length || 1}
+//                 >
+//                   No rows yet
+//                 </td>
+//               </tr>
+//             )}
+//           </tbody>
+//         </table>
+//       </div>
+
+//       {/* Actions */}
+//       <div className="mt-4 flex flex-wrap items-center gap-2">
+//         <button
+//           type="button"
+//           onClick={handleValidate}
+//           disabled={!batch?.batchId}
+//           className="rounded-md bg-gray-700 px-3 py-1.5 text-xs font-semibold text-white hover:bg-gray-800 disabled:opacity-50"
+//         >
+//           Validate
+//         </button>
+//         <button
+//           type="button"
+//           onClick={handleDryRun}
+//           disabled={!batch?.batchId}
+//           className="rounded-md bg-indigo-600 px-3 py-1.5 text-xs font-semibold text-white hover:bg-indigo-700 disabled:opacity-50"
+//         >
+//           (Perview) Dry-run materialize
+//         </button>
+//         <button
+//           type="button"
+//           onClick={handlePersist}
+//           disabled={!batch?.batchId || persisting}
+//           className="rounded-md bg-green-600 px-3 py-1.5 text-xs font-semibold text-white hover:bg-green-700 disabled:opacity-50"
+//         >
+//           {persisting
+//             ? "Persisting…"
+//             : "Persist (create audience + recipients)"}
+//         </button>
+//       </div>
+
+//       {/* Validation result */}
+//       {valRes && (
+//         <div className="mt-3 rounded-lg border border-amber-200 bg-amber-50 p-3 text-xs text-amber-900">
+//           <div className="font-semibold">Validation</div>
+//           {Array.isArray(valRes.problems) && valRes.problems.length > 0 ? (
+//             <ul className="mt-1 list-disc pl-5">
+//               {valRes.problems.map((p, i) => (
+//                 <li key={i}>{p}</li>
+//               ))}
+//             </ul>
+//           ) : (
+//             <div className="mt-1 text-green-700">No problems found.</div>
+//           )}
+//         </div>
+//       )}
+
+//       {/* Dry-run preview */}
+//       {dryPreview && (
+//         <div className="mt-3 rounded-lg border border-sky-200 bg-sky-50 p-3 text-xs text-sky-900">
+//           <div className="font-semibold">Dry-run preview</div>
+//           <pre className="mt-1 overflow-x-auto rounded bg-white p-2 text-[11px] text-gray-800">
+//             {JSON.stringify(dryPreview, null, 2)}
+//           </pre>
+//         </div>
+//       )}
+//     </section>
+//   );
+// }
+
+// // src/pages/Campaigns/components/CsvAudienceSection.jsx
+// import React, { useEffect, useMemo, useRef, useState } from "react";
+// import { toast } from "react-toastify";
+// import {
+//   fetchCsvSchema,
+//   downloadCsvSampleBlob,
+//   uploadCsvBatch,
+//   getBatchSample,
+//   validateBatch,
+//   suggestMappings,
+//   saveMappings,
+//   materialize,
+// } from "../api/csvApi";
+
+// // Small helper to download a Blob as a file
+// function saveBlob(blob, filename) {
+//   const url = window.URL.createObjectURL(blob);
+//   const a = document.createElement("a");
+//   a.href = url;
+//   a.download = filename;
+//   a.click();
+//   window.URL.revokeObjectURL(url);
+// }
+
+// /**
+//  * CsvAudienceSection
+//  * Drives the end-to-end bulk personalization flow for a campaign:
+//  * 1) GET /campaigns/{id}/csv-sample/schema   -> learn required headers + param count
+//  * 2) Download sample (optional)
+//  * 3) Upload CSV (multipart)                   -> POST /csv/batch
+//  * 4) Preview first rows                       -> GET /csv/batch/{batchId}/sample
+//  * 5) Map phone + params (CSV column or constant)
+//  * 6) Validate                                 -> POST /csv/batch/{batchId}/validate
+//  * 7) Dry-run                                  -> POST /campaigns/{id}/materialize { mode: "dryRun" }
+//  * 8) Persist                                  -> POST /campaigns/{id}/materialize { mode: "commit" }
+//  */
+// export default function CsvAudienceSection({ campaignId }) {
+//   const [loading, setLoading] = useState(true);
+//   const [schema, setSchema] = useState(null); // { headers, placeholderCount, parameterNames? }
+
+//   const [file, setFile] = useState(null);
+//   const [batch, setBatch] = useState(null); // { batchId, headerJson, ... }
+//   const [sample, setSample] = useState(null); // { headers, rows }
+//   const [valReq, setValReq] = useState({
+//     normalizePhone: true,
+//     checkDuplicates: true,
+//   });
+//   const [valRes, setValRes] = useState(null);
+
+//   // For each template param {{1}}..{{N}}:
+//   // { index:1, sourceType:"csv"|"const", sourceName:"", constValue:"" }
+//   const [paramMappings, setParamMappings] = useState([]);
+//   const [phoneHeader, setPhoneHeader] = useState("");
+//   const [dryPreview, setDryPreview] = useState(null);
+//   const [persisting, setPersisting] = useState(false);
+
+//   const topRef = useRef(null);
+
+//   // Load schema (single source of truth for how many params are needed)
+//   useEffect(() => {
+//     let isMounted = true;
+//     (async () => {
+//       try {
+//         setLoading(true);
+//         const sc = await fetchCsvSchema(campaignId);
+//         if (!isMounted) return;
+//         setSchema(sc);
+
+//         const N = Number(sc?.placeholderCount || 0);
+//         const initial = Array.from({ length: N }, (_, i) => ({
+//           index: i + 1,
+//           sourceType: "csv",
+//           sourceName: "",
+//           constValue: "",
+//         }));
+//         setParamMappings(initial);
+//       } catch (e) {
+//         toast.error("Failed to load CSV schema.");
+//       } finally {
+//         if (isMounted) setLoading(false);
+//       }
+//     })();
+//     return () => {
+//       isMounted = false;
+//     };
+//   }, [campaignId]);
+
+//   // Prefer most concrete headers: sample.headers -> batch.headerJson -> schema.headers
+//   const csvHeaders = useMemo(
+//     () => sample?.headers || batch?.headerJson || schema?.headers || [],
+//     [schema, batch, sample]
+//   );
+
+//   // Update mapping helper
+//   const updateMapping = (idxZero, patch) => {
+//     setParamMappings(prev => {
+//       const next = [...prev];
+//       next[idxZero] = { ...next[idxZero], ...patch };
+//       return next;
+//     });
+//   };
+
+//   // Download one-line sample (server builds correct headers)
+//   const handleDownloadSample = async () => {
+//     try {
+//       const blob = await downloadCsvSampleBlob(campaignId);
+//       saveBlob(blob, `campaign-${campaignId}-sample.csv`);
+//     } catch {
+//       toast.error("Could not download sample CSV.");
+//     }
+//   };
+
+//   // Upload CSV -> create CsvBatch -> load first rows -> try mapping suggestions
+//   const handleFile = async f => {
+//     if (!f) return;
+//     setFile(f);
+//     try {
+//       const up = await uploadCsvBatch(f, null);
+//       setBatch(up);
+//       toast.success("CSV uploaded.");
+
+//       const s = await getBatchSample(up.batchId, 10);
+//       setSample(s);
+
+//       // Guess phone column by common names
+//       const lower = s.headers.map(h => String(h).toLowerCase());
+//       const guessIdx = lower.findIndex(h =>
+//         ["phone", "mobile", "whatsapp", "number", "phonee164"].some(k =>
+//           h.includes(k)
+//         )
+//       );
+//       setPhoneHeader(guessIdx >= 0 ? s.headers[guessIdx] : "");
+
+//       // Optional: backend suggestions to pre-fill param mappings
+//       try {
+//         const sugg = await suggestMappings(campaignId, up.batchId);
+//         if (Array.isArray(sugg?.items)) {
+//           setParamMappings(prev =>
+//             prev.map(p => {
+//               const m = sugg.items.find(x => x.index === p.index);
+//               return m ? { ...p, ...m } : p;
+//             })
+//           );
+//         }
+//       } catch {
+//         // suggestions are optional
+//       }
+//     } catch (e) {
+//       toast.error(e?.message || "CSV upload failed.");
+//     }
+//   };
+
+//   // Validate phones & duplicates
+//   const handleValidate = async () => {
+//     if (!batch?.batchId) return toast.warn("Upload a CSV first.");
+//     if (!phoneHeader) return toast.warn("Choose the phone column.");
+
+//     try {
+//       const req = {
+//         phoneHeader,
+//         requiredHeaders: [], // params may be constants; we don't force CSV headers
+//         normalizePhone: !!valReq.normalizePhone,
+//         checkDuplicates: !!valReq.checkDuplicates,
+//       };
+//       const res = await validateBatch(batch.batchId, req);
+//       setValRes(res);
+//       if (Array.isArray(res?.problems) && res.problems.length > 0) {
+//         toast.warn(`Validation found ${res.problems.length} issue(s).`);
+//       } else {
+//         toast.success("Validation passed.");
+//       }
+//     } catch {
+//       toast.error("Validation call failed.");
+//     }
+//   };
+
+//   // Build DTO we send to saveMappings/materialize
+//   const buildMappingsDto = () => ({
+//     items: paramMappings.map(m => ({
+//       component: "param",
+//       index: m.index,
+//       sourceType: m.sourceType,
+//       sourceName: m.sourceType === "csv" ? m.sourceName || null : null,
+//       constValue: m.sourceType === "const" ? m.constValue ?? "" : null,
+//     })),
+//   });
+
+//   // Dry-run (no DB writes)
+//   const handleDryRun = async () => {
+//     if (!batch?.batchId) return toast.warn("Upload a CSV first.");
+//     if (!phoneHeader) return toast.warn("Choose the phone column.");
+
+//     try {
+//       // Keep backend in sync with what user chose
+//       await saveMappings(campaignId, buildMappingsDto());
+
+//       const body = {
+//         mode: "dryRun",
+//         batchId: batch.batchId,
+//         normalizePhone: !!valReq.normalizePhone,
+//         deduplicate: !!valReq.checkDuplicates,
+//         phoneHeader,
+//         mappings: buildMappingsDto().items, // sent inline as well
+//       };
+//       const preview = await materialize(campaignId, body);
+//       setDryPreview(preview);
+//       toast.success("Dry-run ready.");
+//       topRef.current?.scrollIntoView({ behavior: "smooth" });
+//     } catch {
+//       toast.error("Dry-run failed.");
+//     }
+//   };
+
+//   // Commit (creates Audience + AudienceMembers + CampaignRecipients)
+//   const handlePersist = async () => {
+//     if (!batch?.batchId) return toast.warn("Upload a CSV first.");
+//     setPersisting(true);
+//     try {
+//       const body = {
+//         mode: "commit",
+//         batchId: batch.batchId,
+//         normalizePhone: !!valReq.normalizePhone,
+//         deduplicate: !!valReq.checkDuplicates,
+//         phoneHeader,
+//         mappings: buildMappingsDto().items,
+//       };
+//       const result = await materialize(campaignId, body);
+//       toast.success("Audience created and recipients materialized.");
+//       // You can surface counts from `result` if your API returns them
+//       // console.log(result);
+//     } catch {
+//       toast.error("Persist failed.");
+//     } finally {
+//       setPersisting(false);
+//     }
+//   };
+
+//   if (loading) {
+//     return (
+//       <div className="rounded-lg border bg-white p-4 text-sm text-gray-500">
+//         Loading CSV schema…
+//       </div>
+//     );
+//   }
+
+//   return (
+//     <section ref={topRef} className="rounded-xl border bg-white p-4 shadow-sm">
+//       <h2 className="mb-3 text-sm font-semibold text-gray-800">
+//         Audience via CSV
+//       </h2>
+
+//       {/* Header: expected columns + actions */}
+//       <div className="mb-4 flex flex-wrap items-center gap-3 text-sm">
+//         <div className="text-gray-600">
+//           Expected columns:&nbsp;
+//           <code className="rounded bg-gray-100 px-1.5 py-0.5">
+//             {Array.isArray(schema?.headers) ? schema.headers.join(", ") : "—"}
+//           </code>
+//         </div>
+//         <button
+//           type="button"
+//           onClick={handleDownloadSample}
+//           className="rounded-md bg-indigo-600 px-3 py-1.5 text-xs font-semibold text-white hover:bg-indigo-700"
+//         >
+//           Download sample CSV
+//         </button>
+//         <label className="ml-auto cursor-pointer text-indigo-600 hover:underline">
+//           Upload CSV
+//           <input
+//             type="file"
+//             accept=".csv"
+//             onChange={e => handleFile(e.target.files?.[0])}
+//             className="hidden"
+//           />
+//         </label>
+//       </div>
+
+//       {/* Phone + toggles */}
+//       <div className="grid gap-3 md:grid-cols-2">
+//         <div className="rounded-lg border p-3">
+//           <h3 className="mb-2 text-xs font-semibold text-gray-700">
+//             Phone column
+//           </h3>
+//           <select
+//             className="w-full rounded-lg border px-3 py-2 text-sm outline-none focus:border-purple-500"
+//             value={phoneHeader}
+//             onChange={e => setPhoneHeader(e.target.value)}
+//             disabled={!csvHeaders.length}
+//           >
+//             <option value="">
+//               {csvHeaders.length ? "-- Select column --" : "Upload a CSV first"}
+//             </option>
+//             {csvHeaders.map(h => (
+//               <option key={h} value={h}>
+//                 {h}
+//               </option>
+//             ))}
+//           </select>
+
+//           <div className="mt-3 flex items-center gap-4 text-xs text-gray-700">
+//             <label className="inline-flex items-center gap-2">
+//               <input
+//                 type="checkbox"
+//                 checked={valReq.normalizePhone}
+//                 onChange={e =>
+//                   setValReq(v => ({ ...v, normalizePhone: e.target.checked }))
+//                 }
+//               />
+//               Normalize phone (E.164)
+//             </label>
+//             <label className="inline-flex items-center gap-2">
+//               <input
+//                 type="checkbox"
+//                 checked={valReq.checkDuplicates}
+//                 onChange={e =>
+//                   setValReq(v => ({ ...v, checkDuplicates: e.target.checked }))
+//                 }
+//               />
+//               Deduplicate by phone
+//             </label>
+//           </div>
+//         </div>
+
+//         {/* Param mappings */}
+//         <div className="rounded-lg border p-3">
+//           <h3 className="mb-2 text-xs font-semibold text-gray-700">
+//             Template parameters
+//           </h3>
+//           {paramMappings.length === 0 ? (
+//             <p className="text-sm text-gray-500">
+//               No parameters required for this template.
+//             </p>
+//           ) : (
+//             <div className="space-y-2">
+//               {paramMappings.map((m, i) => (
+//                 <div
+//                   key={m.index}
+//                   className="grid grid-cols-[80px,100px,1fr] items-center gap-2"
+//                 >
+//                   <div className="text-xs text-gray-500">{`{{${m.index}}}`}</div>
+//                   <select
+//                     className="rounded-lg border px-2 py-1.5 text-xs outline-none focus:border-purple-500"
+//                     value={m.sourceType}
+//                     onChange={e =>
+//                       updateMapping(i, { sourceType: e.target.value })
+//                     }
+//                   >
+//                     <option value="csv">CSV column</option>
+//                     <option value="const">Constant</option>
+//                   </select>
+
+//                   {m.sourceType === "csv" ? (
+//                     <select
+//                       className="w-full rounded-lg border px-2 py-1.5 text-xs outline-none focus:border-purple-500"
+//                       value={m.sourceName || ""}
+//                       onChange={e =>
+//                         updateMapping(i, { sourceName: e.target.value })
+//                       }
+//                       disabled={!csvHeaders.length}
+//                     >
+//                       <option value="">
+//                         {csvHeaders.length
+//                           ? "-- Select column --"
+//                           : "Upload CSV"}
+//                       </option>
+//                       {csvHeaders.map(h => (
+//                         <option key={h} value={h}>
+//                           {h}
+//                         </option>
+//                       ))}
+//                     </select>
+//                   ) : (
+//                     <input
+//                       className="w-full rounded-lg border px-2 py-1.5 text-xs outline-none focus:border-purple-500"
+//                       placeholder="Constant value"
+//                       value={m.constValue || ""}
+//                       onChange={e =>
+//                         updateMapping(i, { constValue: e.target.value })
+//                       }
+//                     />
+//                   )}
+//                 </div>
+//               ))}
+//             </div>
+//           )}
+//         </div>
+//       </div>
+
+//       {/* Sample table */}
+//       <div className="mt-4 overflow-x-auto rounded-lg border">
+//         <table className="min-w-full text-xs">
+//           <thead className="bg-gray-100 text-gray-700">
+//             <tr>
+//               {(sample?.headers || csvHeaders).map(h => (
+//                 <th key={h} className="px-3 py-2 text-left">
+//                   {h}
+//                 </th>
+//               ))}
+//             </tr>
+//           </thead>
+//           <tbody>
+//             {Array.isArray(sample?.rows) && sample.rows.length > 0 ? (
+//               sample.rows.map((row, idx) => (
+//                 <tr key={idx} className="border-t">
+//                   {(sample.headers || csvHeaders).map(h => (
+//                     <td key={h} className="px-3 py-1.5">
+//                       {row[h]}
+//                     </td>
+//                   ))}
+//                 </tr>
+//               ))
+//             ) : (
+//               <tr>
+//                 <td
+//                   className="px-3 py-2 text-gray-400"
+//                   colSpan={(csvHeaders || []).length || 1}
+//                 >
+//                   No rows yet
+//                 </td>
+//               </tr>
+//             )}
+//           </tbody>
+//         </table>
+//       </div>
+
+//       {/* Actions */}
+//       <div className="mt-4 flex flex-wrap items-center gap-2">
+//         <button
+//           type="button"
+//           onClick={handleValidate}
+//           disabled={!batch?.batchId}
+//           className="rounded-md bg-gray-700 px-3 py-1.5 text-xs font-semibold text-white hover:bg-gray-800 disabled:opacity-50"
+//         >
+//           Validate
+//         </button>
+//         <button
+//           type="button"
+//           onClick={handleDryRun}
+//           disabled={!batch?.batchId}
+//           className="rounded-md bg-indigo-600 px-3 py-1.5 text-xs font-semibold text-white hover:bg-indigo-700 disabled:opacity-50"
+//         >
+//           Dry-run materialize
+//         </button>
+//         <button
+//           type="button"
+//           onClick={handlePersist}
+//           disabled={!batch?.batchId || persisting}
+//           className="rounded-md bg-green-600 px-3 py-1.5 text-xs font-semibold text-white hover:bg-green-700 disabled:opacity-50"
+//         >
+//           {persisting
+//             ? "Persisting…"
+//             : "Persist (create audience + recipients)"}
+//         </button>
+//       </div>
+
+//       {/* Validation result */}
+//       {valRes && (
+//         <div className="mt-3 rounded-lg border border-amber-200 bg-amber-50 p-3 text-xs text-amber-900">
+//           <div className="font-semibold">Validation</div>
+//           {Array.isArray(valRes.problems) && valRes.problems.length > 0 ? (
+//             <ul className="mt-1 list-disc pl-5">
+//               {valRes.problems.map((p, i) => (
+//                 <li key={i}>{p}</li>
+//               ))}
+//             </ul>
+//           ) : (
+//             <div className="mt-1 text-green-700">No problems found.</div>
+//           )}
+//         </div>
+//       )}
+
+//       {/* Dry-run preview (render raw JSON to stay service-agnostic) */}
+//       {dryPreview && (
+//         <div className="mt-3 rounded-lg border border-sky-200 bg-sky-50 p-3 text-xs text-sky-900">
+//           <div className="font-semibold">Dry-run preview</div>
+//           <pre className="mt-1 overflow-x-auto rounded bg-white p-2 text-[11px] text-gray-800">
+//             {JSON.stringify(dryPreview, null, 2)}
+//           </pre>
+//         </div>
+//       )}
+//     </section>
+//   );
+// }
  
  
 ====================================================== 

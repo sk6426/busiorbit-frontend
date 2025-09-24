@@ -15,6 +15,23 @@ const isGuid = v =>
     v
   );
 
+// Header kind helpers (frontend-only)
+const HK = Object.freeze({
+  None: "none",
+  Text: "text",
+  Image: "image",
+  Video: "video",
+  Document: "document",
+});
+const isMediaHeader = hk =>
+  hk === HK.Image || hk === HK.Video || hk === HK.Document;
+const mediaLabel = hk =>
+  hk === HK.Image
+    ? "Image URL"
+    : hk === HK.Video
+    ? "Video URL"
+    : "Document URL";
+
 function CampaignBuilderPage() {
   const { businessId: ctxBusinessId } = useAuth();
 
@@ -25,7 +42,9 @@ function CampaignBuilderPage() {
   const [selectedTemplate, setSelectedTemplate] = useState(null);
   const [templateParams, setTemplateParams] = useState([]);
   const [buttonParams, setButtonParams] = useState([]);
-  const [imageUrl, setImageUrl] = useState("");
+
+  // 🆕 unified header media url (for Image/Video/Document)
+  const [headerMediaUrl, setHeaderMediaUrl] = useState("");
 
   const [campaignName, setCampaignName] = useState("");
 
@@ -51,8 +70,6 @@ function CampaignBuilderPage() {
   const createdBy = localStorage.getItem("userId");
   const businessName = localStorage.getItem("businessName") || "Your Business";
   const navigate = useNavigate();
-
-  const isImageTemplate = tpl => tpl?.hasImageHeader === true;
 
   // Load approved templates when businessId is ready
   useEffect(() => {
@@ -116,8 +133,6 @@ function CampaignBuilderPage() {
     if (!hasValidBusiness) return;
     (async () => {
       try {
-        // If your controller base route is different, adjust this path accordingly:
-        // e.g., `/whatsapp/senders/${businessId}` if you mounted it under /api/whatsapp
         const r = await axiosClient.get(
           `/WhatsAppSettings/senders/${businessId}`
         );
@@ -126,8 +141,6 @@ function CampaignBuilderPage() {
         const normalized = raw.map(x => {
           const provider = String(x.provider || "").toUpperCase(); // "PINNACLE" | "META_CLOUD"
           const phoneNumberId = x.phoneNumberId;
-          // Prefer the canonical camelCase "whatsAppBusinessNumber" (System.Text.Json default)
-          // Fallbacks cover different casings or older shapes.
           const whatsAppNumber =
             x.whatsAppBusinessNumber ??
             x.whatsappBusinessNumber ??
@@ -140,7 +153,6 @@ function CampaignBuilderPage() {
         });
 
         setSenders(normalized);
-        // Auto-select if there’s exactly one sender
         if (normalized.length === 1) setSelectedSenderId(normalized[0].id);
       } catch {
         toast.error("❌ Failed to load WhatsApp senders.");
@@ -184,12 +196,28 @@ function CampaignBuilderPage() {
     }
   };
 
+  const normalizeHeaderKind = t => {
+    // Prefer new backend fields; fallback to image-only legacy flag
+    const raw = (t.headerKind || "").toString().toLowerCase();
+    if (
+      raw === HK.Image ||
+      raw === HK.Video ||
+      raw === HK.Document ||
+      raw === HK.Text ||
+      raw === HK.None
+    ) {
+      return raw;
+    }
+    // Legacy: only image known
+    return t.hasImageHeader ? HK.Image : HK.None;
+  };
+
   const handleTemplateSelect = async name => {
     if (!name) {
       setSelectedTemplate(null);
       setTemplateParams([]);
       setButtonParams([]);
-      setImageUrl("");
+      setHeaderMediaUrl("");
       return;
     }
     try {
@@ -213,12 +241,19 @@ function CampaignBuilderPage() {
         parsedButtons = [];
       }
 
+      const hk = normalizeHeaderKind(t);
+      const requiresHeaderMediaUrl =
+        t.requiresHeaderMediaUrl === true || isMediaHeader(hk);
+
       const normalized = {
         name: t.name,
         language: t.language,
         body: t.body || "",
+        headerKind: hk, // "image" | "video" | "document" | "text" | "none"
+        requiresHeaderMediaUrl,
+        // Legacy fields kept (not used for logic anymore)
         hasImageHeader: !!t.hasImageHeader,
-        parametersCount: t.placeholderCount || 0,
+        parametersCount: t.placeholderCount || 0, // legacy: total placeholder count; we’ll refine later
         buttonParams: parsedButtons,
       };
 
@@ -235,7 +270,7 @@ function CampaignBuilderPage() {
           return isDynamic ? "" : null;
         }) || [];
       setButtonParams(dynSlots);
-      setImageUrl("");
+      setHeaderMediaUrl("");
     } catch {
       toast.error("❌ Error loading template details.");
     }
@@ -267,6 +302,13 @@ function CampaignBuilderPage() {
       return;
     }
 
+    // Header media rules (campaign-level)
+    const hk = selectedTemplate?.headerKind || HK.None;
+    if (isMediaHeader(hk) && !headerMediaUrl) {
+      toast.warn(`⚠️ Please provide a ${mediaLabel(hk)}.`);
+      return;
+    }
+
     setSubmitting(true);
 
     const buttonPayload =
@@ -285,22 +327,33 @@ function CampaignBuilderPage() {
         };
       }) || [];
 
+    // For now (until backend supports video/document),
+    // keep campaignType = "image" only if image header, else "text"
+    const campaignType = hk === HK.Image ? "image" : "text";
+
     const payload = {
       name: campaignName,
       messageTemplate: selectedTemplate.name,
       templateId: selectedTemplate.name,
       buttonParams: buttonPayload,
-      campaignType: isImageTemplate(selectedTemplate) ? "image" : "text",
-      imageUrl: isImageTemplate(selectedTemplate) ? imageUrl : null,
+
+      campaignType,
+      // Back-compat: old backend expects imageUrl when campaignType === "image"
+      imageUrl: hk === HK.Image ? headerMediaUrl : null,
+
+      // Future-friendly: always send headerMediaUrl + headerKind
+      headerMediaUrl: isMediaHeader(hk) ? headerMediaUrl : null,
+      headerKind: hk, // "image" | "video" | "document" | "text" | "none"
+
       scheduledAt: scheduledAt ? new Date(scheduledAt).toISOString() : null,
       createdBy,
       businessId,
       templateParameters: templateParams,
 
-      // 🆕 Optional flow link (backend treats null/empty as “no flow”)
+      // Flow (optional)
       ctaFlowConfigId: useFlow ? selectedFlowId : null,
 
-      // 🆕 Sender — only these go to BE
+      // Sender
       provider: String(selectedSender.provider || "").toUpperCase(), // "PINNACLE" | "META_CLOUD"
       phoneNumberId: selectedSender.phoneNumberId,
     };
@@ -403,9 +456,6 @@ function CampaignBuilderPage() {
         <div className="space-y-4">
           {/* Campaign meta */}
           <section className="rounded-xl border bg-white p-4 shadow-sm">
-            {/* <h2 className="mb-3 text-sm font-semibold text-gray-800">
-              Campaign details
-            </h2> */}
             <div className="space-y-3 text-sm">
               <div>
                 <label className="mb-1 block font-medium text-gray-700">
@@ -622,19 +672,23 @@ function CampaignBuilderPage() {
               </p>
             </div>
 
-            {selectedTemplate && isImageTemplate(selectedTemplate) && (
+            {selectedTemplate?.requiresHeaderMediaUrl && (
               <div className="mb-3 text-sm">
                 <label className="mb-1 block font-medium text-gray-700">
-                  Image URL
+                  {mediaLabel(selectedTemplate.headerKind)}
                 </label>
                 <input
                   type="text"
                   className="w-full rounded-lg border border-gray-300 px-3 py-2 outline-none focus:border-purple-500"
                   placeholder="https://…"
-                  value={imageUrl}
-                  onChange={e => setImageUrl(e.target.value)}
+                  value={headerMediaUrl}
+                  onChange={e => setHeaderMediaUrl(e.target.value)}
                   disabled={!hasValidBusiness}
                 />
+                <p className="mt-1 text-[11px] text-gray-400">
+                  This is set once per campaign (not in CSV). Must be a public
+                  HTTPS link.
+                </p>
               </div>
             )}
 
@@ -691,7 +745,12 @@ function CampaignBuilderPage() {
                     businessName={businessName}
                     templateBody={selectedTemplate.body}
                     parameters={templateParams}
-                    imageUrl={isImageTemplate(selectedTemplate) ? imageUrl : ""}
+                    // For now, only image preview is supported; others will come later.
+                    imageUrl={
+                      selectedTemplate.headerKind === HK.Image
+                        ? headerMediaUrl
+                        : ""
+                    }
                     buttonParams={(selectedTemplate.buttonParams || []).map(
                       (btn, idx) => {
                         const originalUrl =
