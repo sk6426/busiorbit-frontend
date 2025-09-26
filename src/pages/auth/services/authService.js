@@ -1,4 +1,3 @@
-// 📄 src/pages/auth/services/authService.js
 import axiosClient, { TOKEN_KEY } from "../../../api/axiosClient";
 import { getAuthFromToken } from "../../../utils/jwt";
 
@@ -11,7 +10,7 @@ function toArray(csv) {
 
 export const login = async (email, password) => {
   try {
-    const { data } = await axiosClient.post("/auth/login", { email, password });
+    const { data } = await axiosClient.post("/login", { email, password });
 
     const token = data?.token;
     if (!token) {

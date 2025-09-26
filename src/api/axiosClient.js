@@ -1,4 +1,3 @@
-// src/utils/axiosClient.js
 import axios from "axios";
 import { toast } from "react-toastify";
 
@@ -6,7 +5,7 @@ import { toast } from "react-toastify";
 const rawBase =
   (process.env.REACT_APP_API_BASE_URL &&
     process.env.REACT_APP_API_BASE_URL.trim()) ||
-  "https://your-api.example.com";
+  "https://app.xolorebytesolutions.com";
 
 // Ensure it ends with /api (but not //api)
 function normalizeBaseUrl(url) {
