@@ -99,7 +99,7 @@ const Login = () => {
           </div>
 
           <h2 className="text-2xl font-bold text-center text-purple-800 mb-6">
-            Welcome to <span className="text-purple-900">xByteChat</span>
+            Welcome to <span className="text-purple-900">LeadsCone</span>
           </h2>
 
           {error && (
