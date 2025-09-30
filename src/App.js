@@ -104,6 +104,7 @@ import AccessDebugger from "./dev/AccessDebugger";
 // Settings
 import SettingsWorkspacePage from "./pages/Workspaces/SettingsWorkspacePage";
 import TagList from "./pages/Tags/TagList";
+import MessageLogsReport from "./pages/reports/MessageLogsReport";
 const isDev = process.env.NODE_ENV === "development";
 
 function App() {
@@ -383,9 +384,17 @@ function App() {
             }
           />
           <Route
-            path="campaigns/ImageCampaignListPage"
+            path="campaigns/messagelogs/"
             element={
               <FeatureGuard featureKey={FK.CAMPAIGN_VIEW}>
+                <MessageLogsReport />
+              </FeatureGuard>
+            }
+          />
+          <Route
+            path="campaigns/ImageCampaignListPage"
+            element={
+              <FeatureGuard featureKey={FK.CAMPAIGN_IMAGE_LIST_VIEW}>
                 <ImageCampaignListPage />
               </FeatureGuard>
             }
@@ -393,7 +402,7 @@ function App() {
           <Route
             path="campaigns/send-template-simple"
             element={
-              <FeatureGuard featureKey={FK.CAMPAIGN_VIEW}>
+              <FeatureGuard featureKey={FK.CAMPAIGN_SEND_TEMPLATE_SIMPLE}>
                 <SendTemplateMessagePage />
               </FeatureGuard>
             }
@@ -487,7 +496,7 @@ function App() {
           />
 
           {/* Misc */}
-          <Route path="tracking/logs" element={<TrackingViewer />} />
+
           <Route path="tracking/logs/:id" element={<TrackingLogDetail />} />
           <Route path="devtools/cta-tester" element={<CTATester />} />
           <Route path="webhooks/failed" element={<FailedWebhookLogs />} />
@@ -523,6 +532,15 @@ function App() {
               </FeatureGuard>
             }
           />
+          <Route
+            path="tracking/logs"
+            element={
+              <FeatureGuard featureKey={FK.TRACKING_LOGS_VIEW}>
+                <TrackingViewer />
+              </FeatureGuard>
+            }
+          />
+
           <Route
             path="automation/auto-reply-builder"
             element={

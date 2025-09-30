@@ -13,6 +13,10 @@ export const FK = {
   CAMPAIGN_VIEW: "campaign.view",
   CAMPAIGN_CREATE: "campaign.create",
   CAMPAIGN_DELETE: "campaign.delete",
+  CAMPAIGN_SEND_TEMPLATE_SIMPLE: "campaign.send.template.simple",
+  CAMPAIGN_TRACKING_LOGS_VIEW: "campaign.tracking.logs.view",
+
+  CAMPAIGN_IMAGE_LIST_VIEW: "image.campaign.list.view",
   // CAMPAIG_SEND_TEMPLATE: "campaign.create",
   // Dashboard
   DASHBOARD_VIEW: "dashboard.view",

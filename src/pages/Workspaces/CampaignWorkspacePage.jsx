@@ -918,6 +918,8 @@ const PERM_BY_BLOCK = {
   "template-campaign-list": [FK.CAMPAIGN_VIEW],
   "send-template-msg": [FK.CAMPAIGN_CREATE],
   "campaign-builder": [FK.CAMPAIGN_CREATE],
+  "campaign-send-template-simple": [FK.CAMPAIGN_SEND_TEMPLATE_SIMPLE],
+  "campaign-tracking-logs": [FK.CAMPAIGN_TRACKING_LOGS_VIEW],
   TrackingViewer: [FK.CAMPAIGN_VIEW],
 };
 
@@ -948,7 +950,7 @@ const campaignBlocks = [
     action: "Create Campaign-Template",
   },
   {
-    id: "send-template-msg",
+    id: "campaign-send-template-simple",
     label: "Send Template Message",
     description:
       "Send approved WhatsApp  (Text + button + Image) messages to contacts.",
@@ -974,9 +976,9 @@ const campaignBlocks = [
   },
   {
     id: "status-logs",
-    label: "Campaign Logs",
+    label: "Message Send Logs",
     description: "Track delivery status for all sent messages.",
-    path: "/app/campaigns/logs/:campaignId",
+    path: "/app/campaigns/messagelogs",
     icon: <FileBarChart className="text-pink-500" size={22} />,
     action: "View Logs",
   },
@@ -1016,7 +1018,7 @@ const campaignBlocks = [
     action: "Campaign Wizard",
   },
   {
-    id: "TrackingViewer",
+    id: "campaign-tracking-logs",
     label: "Tracking Logs",
     description: "See detailed logs for campaign interactions and events.",
     path: "/app/tracking/logs",

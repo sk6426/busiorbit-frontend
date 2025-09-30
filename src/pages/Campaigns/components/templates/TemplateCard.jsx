@@ -1,22 +1,19 @@
-import React, { useState, useMemo } from "react";
+import React, { useMemo } from "react";
 
-/* ---------- helpers ---------- */
-function cx(...xs) {
-  return xs.filter(Boolean).join(" ");
-}
+/* helpers */
 function relPast(iso) {
   if (!iso) return null;
   try {
     const d = new Date(iso).getTime();
     const diff = Date.now() - d;
     if (diff < 0) return "in future";
-    const mins = Math.round(diff / 60000);
-    if (mins < 1) return "just now";
-    if (mins < 60) return `${mins}m ago`;
-    const hrs = Math.round(mins / 60);
-    if (hrs < 24) return `${hrs}h ago`;
-    const days = Math.round(hrs / 24);
-    return `${days}d ago`;
+    const m = Math.round(diff / 60000);
+    if (m < 1) return "just now";
+    if (m < 60) return `${m}m ago`;
+    const h = Math.round(m / 60);
+    if (h < 24) return `${h}h ago`;
+    const d2 = Math.round(h / 24);
+    return `${d2}d ago`;
   } catch {
     return null;
   }
@@ -29,298 +26,110 @@ function fmt(iso) {
   }
 }
 
+/* outline buttons (no yellow) */
+const btnPurple =
+  "inline-flex items-center gap-2 rounded-xl border border-purple-300 bg-white px-3 py-1.5 text-xs font-semibold text-purple-700 hover:bg-purple-50 focus:outline-none focus:ring-2 focus:ring-purple-200 disabled:opacity-50 disabled:cursor-not-allowed";
+const btnSlate =
+  "inline-flex items-center gap-2 rounded-xl border border-slate-300 bg-white px-3 py-1.5 text-xs font-semibold text-slate-700 hover:bg-slate-50 focus:outline-none focus:ring-2 focus:ring-slate-200 disabled:opacity-50 disabled:cursor-not-allowed";
+const btnEmerald =
+  "inline-flex items-center gap-2 rounded-xl border border-emerald-300 bg-white px-3 py-1.5 text-xs font-semibold text-emerald-700 hover:bg-emerald-50 focus:outline-none focus:ring-2 focus:ring-emerald-200 disabled:opacity-50 disabled:cursor-not-allowed";
+
 /**
  * Props:
- *  - t: { id, name, body, kind, recipients, updatedAt, createdAt?, sentAt?, scheduledAt?, status? }
+ *  - t: { id, name, kind, recipients, createdAt?, sentAt? }
  *  - sending: boolean
- *  - onOpenInspector, onSend, onAssign, onViewRecipients
+ *  - onAssign, onViewRecipients, onSend
  */
 export default function TemplateCard({
   t,
   sending = false,
-  onOpenInspector,
-  onSend,
   onAssign,
   onViewRecipients,
+  onSend,
 }) {
-  const [expanded, setExpanded] = useState(false);
-
   const recipients = Number(t?.recipients || 0);
   const canSend = recipients > 0 && !sending;
 
   const isTextOnly = t?.kind !== "image_header";
   const typeLabel = isTextOnly ? "Text only" : "Image header";
 
-  // Message body comes from Campaign.MessageBody (normalized to t.body)
-  const body = String(t?.body || "");
-
-  // Dates (defensive across possible shapes)
   const createdAt =
     t?.createdAt || t?.created_on || t?.createdOn || t?.created || null;
   const sentAt =
     t?.sentAt || t?.lastSentAt || t?.dispatchedAt || t?.deliveredAt || null;
-  const scheduledAt =
-    t?.scheduledAt || t?.scheduleAt || t?.scheduled_for || null;
 
-  // Status logic
-  const hasFutureSchedule =
-    scheduledAt && new Date(scheduledAt).getTime() > Date.now();
-
-  const { statusKind, statusLabel, statusTitle } = useMemo(() => {
-    // prefer explicit backend status if present
-    const raw = String(t?.status || "").toLowerCase(); // "draft" | "sending" | "sent" | etc.
-
-    if (hasFutureSchedule) {
-      return {
-        statusKind: "scheduled",
-        statusLabel: "Scheduled",
-        statusTitle: `Scheduled for ${fmt(scheduledAt)}`,
-      };
-    }
-
-    if (raw === "sending") {
-      return {
-        statusKind: "sending",
-        statusLabel: "Sending…",
-        statusTitle: "",
-      };
-    }
-    if (raw === "sent" || sentAt) {
-      return {
-        statusKind: "sent",
-        statusLabel: sentAt ? `Sent ${relPast(sentAt)}` : "Sent",
-        statusTitle: sentAt ? `Sent on ${fmt(sentAt)}` : "",
-      };
-    }
-    if (raw === "draft") {
-      return { statusKind: "draft", statusLabel: "Draft", statusTitle: "" };
-    }
-
-    return { statusKind: "idle", statusLabel: "Not sent", statusTitle: "" };
-  }, [t?.status, scheduledAt, hasFutureSchedule, sentAt]);
-
-  const statusClasses =
-    statusKind === "sent"
-      ? "bg-emerald-50 text-emerald-700 ring-1 ring-emerald-100"
-      : statusKind === "scheduled"
-      ? "bg-amber-50 text-amber-800 ring-1 ring-amber-100"
-      : statusKind === "sending"
-      ? "bg-sky-50 text-sky-700 ring-1 ring-sky-100"
-      : statusKind === "draft"
-      ? "bg-gray-100 text-gray-700 ring-1 ring-gray-200"
-      : "bg-gray-100 text-gray-700 ring-1 ring-gray-200";
+  const sentTiny = sentAt ? relPast(sentAt) : null;
 
   return (
-    <article className="group relative flex h-full flex-col overflow-hidden rounded-xl border border-gray-200 bg-white shadow-sm transition hover:shadow-md">
-      {/* Header */}
-      <div className="flex items-center justify-between gap-2 border-b border-gray-100 px-3 py-2">
-        <div className="min-w-0 flex items-center gap-2">
-          {/* App avatar / mark */}
-          <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-gray-100 text-[12px] font-semibold text-gray-600">
-            WA
+    <article className="relative flex h-full flex-col overflow-hidden rounded-2xl border border-gray-200 bg-white shadow-sm transition hover:shadow-md">
+      {/* Header — centered, cool gray text */}
+      <header className="px-5 pt-5 pb-3">
+        <h3 className="text-center text-[18px] font-semibold tracking-wide text-gray-800">
+          {t?.name || "Untitled Campaign"}
+        </h3>
+        <p className="mt-0.5 text-center text-[11px] font-medium uppercase tracking-wider text-gray-500">
+          Template Campaign
+        </p>
+      </header>
+
+      {/* Info band — white surface, soft border, clean typography */}
+      <section className="mx-3 rounded-xl border border-gray-200 bg-white px-4 py-3 shadow-sm">
+        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+          {/* left pair */}
+          <div className="flex items-center gap-8">
+            <div>
+              <div className="text-[10px] uppercase tracking-wide text-gray-500">
+                Created
+              </div>
+              <div className="text-[13px] font-semibold text-gray-800">
+                {createdAt ? fmt(createdAt) : "—"}
+              </div>
+            </div>
+            <div>
+              <div className="text-[10px] uppercase tracking-wide text-gray-500">
+                Sent
+              </div>
+              <div className="text-[13px] font-semibold text-gray-800">
+                {sentAt ? fmt(sentAt) : "Not sent"}
+              </div>
+            </div>
           </div>
 
-          <div className="min-w-0">
-            <button
-              onClick={onOpenInspector}
-              type="button"
-              className="block truncate text-[15px] font-semibold text-gray-900 hover:underline"
-              title="Preview template"
-            >
-              {t?.name || "Untitled"}
-            </button>
-            <div className="mt-[2px] flex items-center gap-2 text-[11px] text-gray-500">
-              <span
-                className={cx(
-                  "inline-flex items-center gap-1 rounded-full px-1.5 py-[2px] ring-1",
-                  "bg-gray-50 text-gray-700 ring-gray-200"
-                )}
-                title={typeLabel}
-              >
-                <span className="inline-block h-[6px] w-[6px] rounded-full bg-gray-400" />
+          {/* right pair */}
+          <div className="flex items-center gap-8">
+            <div>
+              <div className="text-[10px] uppercase tracking-wide text-gray-500">
+                Recipients
+              </div>
+              <div className="text-[13px] font-semibold text-gray-800">
+                {recipients}
+              </div>
+            </div>
+            <div>
+              <div className="text-[10px] uppercase tracking-wide text-gray-500">
+                Type
+              </div>
+              <div className="text-[13px] font-semibold text-gray-800">
                 {typeLabel}
-              </span>
-
-              {/* Created date */}
-              {createdAt && (
-                <span
-                  className="inline-flex items-center gap-1"
-                  title={`Created: ${fmt(createdAt)}`}
-                >
-                  <svg
-                    viewBox="0 0 24 24"
-                    className="h-[12px] w-[12px]"
-                    fill="none"
-                    stroke="currentColor"
-                    strokeWidth="2"
-                  >
-                    <path d="M8 2v3M16 2v3M3 9h18M4 7h16a1 1 0 011 1v11a2 2 0 01-2 2H5a2 2 0 01-2-2V8a1 1 0 011-1z" />
-                  </svg>
-                  {new Date(createdAt).toLocaleDateString()}
-                </span>
-              )}
+              </div>
             </div>
           </div>
         </div>
 
-        <div className="flex items-center gap-2">
-          {/* recipients pill */}
-          <span
-            title="Recipients"
-            className={cx(
-              "inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[11px] font-semibold",
-              recipients > 0
-                ? "bg-emerald-50 text-emerald-700"
-                : "bg-gray-100 text-gray-600"
-            )}
-          >
-            <svg
-              viewBox="0 0 24 24"
-              className="h-3.5 w-3.5"
-              fill="none"
-              stroke="currentColor"
-              strokeWidth="2"
-            >
-              <path d="M16 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2" />
-              <circle cx="9" cy="7" r="4" />
-            </svg>
-            {recipients}
-          </span>
-
-          {/* status chip */}
-          <span
-            className={cx(
-              "inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[11px] font-semibold",
-              statusClasses
-            )}
-            title={statusTitle || undefined}
-          >
-            {statusKind === "scheduled" && (
-              <svg
-                viewBox="0 0 24 24"
-                className="h-3.5 w-3.5"
-                fill="none"
-                stroke="currentColor"
-                strokeWidth="2"
-              >
-                <path d="M12 6v6l4 2" />
-                <circle cx="12" cy="12" r="9" />
-              </svg>
-            )}
-            {statusKind === "sent" && (
-              <svg
-                viewBox="0 0 24 24"
-                className="h-3.5 w-3.5"
-                fill="none"
-                stroke="currentColor"
-                strokeWidth="2"
-              >
-                <path d="M5 13l4 4L19 7" />
-              </svg>
-            )}
-            {statusLabel}
-          </span>
-
-          {/* (preview eye icon removed as requested) */}
+        <div className="mt-3 h-px w-full bg-gray-100" />
+        <div className="mt-1 text-right text-[10px] tracking-wide text-gray-600">
+          {sentAt ? `Sent ${sentTiny || ""}` : "Ready to send"}
         </div>
-      </div>
+      </section>
 
-      {/* Body (collapsible) */}
-      <div className="px-3 py-2">
-        <div
-          role="button"
-          title={expanded ? "Click to collapse" : "Click to expand"}
-          onClick={() => setExpanded(v => !v)}
-          className={cx(
-            "relative rounded-lg border bg-gray-50 px-3 py-2 text-[13px] leading-[1.45] text-gray-800",
-            expanded
-              ? "max-h-[320px] overflow-auto"
-              : "max-h-20 overflow-hidden"
-          )}
-        >
-          <pre className="whitespace-pre-wrap font-sans">{body}</pre>
-
-          {!expanded && (
-            <div className="pointer-events-none absolute inset-x-0 bottom-0 h-8 bg-gradient-to-t from-gray-50 to-transparent" />
-          )}
-        </div>
-
-        {/* meta row under body */}
-        <div className="mt-2 flex flex-wrap items-center gap-3 text-[12px] text-gray-600">
-          {/* Sent/date or not sent */}
-          <span
-            className="inline-flex items-center gap-1"
-            title={sentAt ? fmt(sentAt) : "Not sent yet"}
-          >
-            <svg
-              viewBox="0 0 24 24"
-              className="h-[14px] w-[14px]"
-              fill="none"
-              stroke="currentColor"
-              strokeWidth="2"
-            >
-              <path d="M22 2L11 13" />
-              <path d="M22 2l-7 20-4-9-9-4 20-7z" />
-            </svg>
-            {sentAt ? `Sent ${relPast(sentAt) || ""}` : "Not sent"}
-          </span>
-
-          {/* Created date (explicit) */}
-          {createdAt && (
-            <span
-              className="inline-flex items-center gap-1"
-              title={fmt(createdAt)}
-            >
-              <svg
-                viewBox="0 0 24 24"
-                className="h-[14px] w-[14px]"
-                fill="none"
-                stroke="currentColor"
-                strokeWidth="2"
-              >
-                <path d="M8 2v3M16 2v3M3 9h18M4 7h16a1 1 0 011 1v11a2 2 0 01-2 2H5a2 2 0 01-2-2V8a1 1 0 011-1z" />
-              </svg>
-              {new Date(createdAt).toLocaleDateString()}
-            </span>
-          )}
-
-          {/* Scheduled (if in future) */}
-          {hasFutureSchedule && (
-            <span
-              className="inline-flex items-center gap-1"
-              title={fmt(scheduledAt)}
-            >
-              <svg
-                viewBox="0 0 24 24"
-                className="h-[14px] w-[14px]"
-                fill="none"
-                stroke="currentColor"
-                strokeWidth="2"
-              >
-                <path d="M12 6v6l4 2" />
-                <circle cx="12" cy="12" r="9" />
-              </svg>
-              Scheduled
-            </span>
-          )}
-
-          {/* expand/collapse hint */}
-          <span
-            onClick={() => setExpanded(v => !v)}
-            className="ml-auto inline-flex cursor-pointer items-center gap-1 rounded-full bg-gray-100 px-2 py-[2px] text-[11px] text-gray-700 hover:bg-gray-200"
-          >
-            {expanded ? "Collapse" : "Expand"}
-          </span>
-        </div>
-      </div>
-
-      {/* Footer actions (right aligned) */}
-      <div className="mt-auto border-t border-gray-100 px-3 py-2">
+      {/* Footer — actions, distinct outlines */}
+      <footer className="mt-auto border-t border-gray-100 px-3 py-2">
         <div className="flex items-center justify-end gap-2">
           <button
-            className="inline-flex items-center gap-2 rounded-lg bg-purple-600 px-3 py-1.5 text-xs font-semibold text-white hover:bg-purple-700"
+            className={btnPurple}
             onClick={onAssign}
             type="button"
+            title="Assign recipients"
           >
             <svg
               viewBox="0 0 24 24"
@@ -337,9 +146,10 @@ export default function TemplateCard({
           </button>
 
           <button
-            className="inline-flex items-center gap-2 rounded-lg bg-blue-100 px-3 py-1.5 text-xs font-semibold text-blue-700 hover:bg-blue-200"
+            className={btnSlate}
             onClick={onViewRecipients}
             type="button"
+            title="View recipients"
           >
             <svg
               viewBox="0 0 24 24"
@@ -355,7 +165,7 @@ export default function TemplateCard({
           </button>
 
           <button
-            className="inline-flex items-center gap-2 rounded-lg bg-emerald-600 px-3 py-1.5 text-xs font-semibold text-white hover:bg-emerald-700 disabled:opacity-50"
+            className={btnEmerald}
             disabled={!canSend}
             onClick={onSend}
             type="button"
@@ -374,10 +184,961 @@ export default function TemplateCard({
             {sending ? "Sending…" : "Send"}
           </button>
         </div>
-      </div>
+      </footer>
     </article>
   );
 }
+
+// import React, { useMemo } from "react";
+
+// /* ---------- helpers ---------- */
+// function cx(...xs) {
+//   return xs.filter(Boolean).join(" ");
+// }
+// function relPast(iso) {
+//   if (!iso) return null;
+//   try {
+//     const d = new Date(iso).getTime();
+//     const diff = Date.now() - d;
+//     if (diff < 0) return "in future";
+//     const m = Math.round(diff / 60000);
+//     if (m < 1) return "just now";
+//     if (m < 60) return `${m}m ago`;
+//     const h = Math.round(m / 60);
+//     if (h < 24) return `${h}h ago`;
+//     const d2 = Math.round(h / 24);
+//     return `${d2}d ago`;
+//   } catch {
+//     return null;
+//   }
+// }
+// function fmt(iso) {
+//   try {
+//     return new Date(iso).toLocaleString();
+//   } catch {
+//     return "—";
+//   }
+// }
+
+// /* outline variants tuned to your palette */
+// const ghostPurple =
+//   "inline-flex items-center gap-2 rounded-xl border border-purple-200 bg-white px-3 py-1.5 text-xs font-semibold text-purple-700 hover:bg-purple-50 focus:outline-none focus:ring-2 focus:ring-purple-200 disabled:opacity-50 disabled:cursor-not-allowed";
+// const ghostBlue =
+//   "inline-flex items-center gap-2 rounded-xl border border-blue-200 bg-white px-3 py-1.5 text-xs font-semibold text-blue-700 hover:bg-blue-50 focus:outline-none focus:ring-2 focus:ring-blue-200 disabled:opacity-50 disabled:cursor-not-allowed";
+// const ghostEmerald =
+//   "inline-flex items-center gap-2 rounded-xl border border-emerald-200 bg-white px-3 py-1.5 text-xs font-semibold text-emerald-700 hover:bg-emerald-50 focus:outline-none focus:ring-2 focus:ring-emerald-200 disabled:opacity-50 disabled:cursor-not-allowed";
+
+// /**
+//  * Props:
+//  *  - t: { id, name, body, kind, recipients, createdAt?, sentAt?, scheduledAt?, status? }
+//  *  - sending: boolean
+//  *  - onAssign, onViewRecipients, onSend
+//  */
+// export default function TemplateCard({
+//   t,
+//   sending = false,
+//   onAssign,
+//   onViewRecipients,
+//   onSend,
+// }) {
+//   const recipients = Number(t?.recipients || 0);
+//   const canSend = recipients > 0 && !sending;
+
+//   const isTextOnly = t?.kind !== "image_header";
+//   const typeLabel = isTextOnly ? "Text only" : "Image header";
+
+//   const createdAt =
+//     t?.createdAt || t?.created_on || t?.createdOn || t?.created || null;
+//   const sentAt =
+//     t?.sentAt || t?.lastSentAt || t?.dispatchedAt || t?.deliveredAt || null;
+
+//   /* precomputed labels */
+//   const sentLabel = useMemo(() => {
+//     if (!sentAt) return "Not sent";
+//     const rp = relPast(sentAt);
+//     return rp ? `Sent ${rp}` : "Sent";
+//   }, [sentAt]);
+
+//   return (
+//     <article className="group relative flex h-full flex-col overflow-hidden rounded-2xl border border-gray-200 bg-white shadow-sm transition hover:shadow-md">
+//       {/* Header — clean, centered title */}
+//       <header className="px-5 pt-5 pb-3">
+//         <h3 className="text-center text-[18px] font-semibold tracking-wide text-gray-900">
+//           {t?.name || "Untitled Campaign"}
+//         </h3>
+//         <p className="mt-0.5 text-center text-[11px] font-medium uppercase tracking-wider text-gray-500">
+//           Template Campaign
+//         </p>
+//       </header>
+
+//       {/* Middle band — gradient info strip */}
+//       <section
+//         className={cx(
+//           "mx-3 rounded-xl px-4 py-3 text-white",
+//           // gradient tuned to your app’s purple/indigo/sky palette
+//           "bg-gradient-to-r from-purple-500 via-indigo-500 to-sky-500"
+//         )}
+//       >
+//         <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+//           {/* left column */}
+//           <div className="flex items-center gap-3">
+//             <div className="grow">
+//               <div className="text-[10px] uppercase/relaxed opacity-80">
+//                 Created
+//               </div>
+//               <div className="text-[13px] font-semibold">
+//                 {createdAt ? fmt(createdAt) : "—"}
+//               </div>
+//             </div>
+
+//             <div className="grow">
+//               <div className="text-[10px] uppercase/relaxed opacity-80">
+//                 Sent
+//               </div>
+//               <div className="text-[13px] font-semibold">
+//                 {sentAt ? fmt(sentAt) : "Not sent"}
+//               </div>
+//             </div>
+//           </div>
+
+//           {/* right column */}
+//           <div className="flex items-center gap-3">
+//             <div className="grow">
+//               <div className="text-[10px] uppercase/relaxed opacity-80">
+//                 Recipients
+//               </div>
+//               <div className="text-[13px] font-semibold">{recipients}</div>
+//             </div>
+
+//             <div className="grow">
+//               <div className="text-[10px] uppercase/relaxed opacity-80">
+//                 Type
+//               </div>
+//               <div className="text-[13px] font-semibold">{typeLabel}</div>
+//             </div>
+//           </div>
+//         </div>
+
+//         {/* subtle divider line for a touch of the reference card */}
+//         <div className="mt-3 h-px w-full bg-white/30" />
+//         <div className="mt-1 text-right text-[10px] tracking-wide text-white/75">
+//           {sentLabel}
+//         </div>
+//       </section>
+
+//       {/* Spacer to echo the reference layout (white top/bottom) */}
+//       <div className="px-5 pb-2 pt-3" />
+
+//       {/* Footer — actions with distinct outline colors */}
+//       <footer className="mt-auto border-t border-gray-100 px-3 py-2">
+//         <div className="flex items-center justify-end gap-2">
+//           <button
+//             className={ghostPurple}
+//             onClick={onAssign}
+//             type="button"
+//             title="Assign recipients"
+//           >
+//             <svg
+//               viewBox="0 0 24 24"
+//               className="h-4 w-4"
+//               fill="none"
+//               stroke="currentColor"
+//               strokeWidth="2"
+//             >
+//               <path d="M16 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2" />
+//               <circle cx="9" cy="7" r="4" />
+//               <path d="M19 8v6M22 11h-6" />
+//             </svg>
+//             Assign
+//           </button>
+
+//           <button
+//             className={ghostBlue}
+//             onClick={onViewRecipients}
+//             type="button"
+//             title="View recipients"
+//           >
+//             <svg
+//               viewBox="0 0 24 24"
+//               className="h-4 w-4"
+//               fill="none"
+//               stroke="currentColor"
+//               strokeWidth="2"
+//             >
+//               <path d="M16 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2" />
+//               <circle cx="9" cy="7" r="4" />
+//             </svg>
+//             Recipients
+//           </button>
+
+//           <button
+//             className={ghostEmerald}
+//             disabled={!canSend}
+//             onClick={onSend}
+//             type="button"
+//             title={canSend ? "Send campaign" : "Add recipients first"}
+//           >
+//             <svg
+//               viewBox="0 0 24 24"
+//               className="h-4 w-4"
+//               fill="none"
+//               stroke="currentColor"
+//               strokeWidth="2"
+//             >
+//               <path d="M22 2L11 13" />
+//               <path d="M22 2l-7 20-4-9-9-4 20-7z" />
+//             </svg>
+//             {sending ? "Sending…" : "Send"}
+//           </button>
+//         </div>
+//       </footer>
+//     </article>
+//   );
+// }
+
+// import React, { useState, useMemo } from "react";
+
+// /* ---------- helpers ---------- */
+// function cx(...xs) {
+//   return xs.filter(Boolean).join(" ");
+// }
+// function relPast(iso) {
+//   if (!iso) return null;
+//   try {
+//     const d = new Date(iso).getTime();
+//     const diff = Date.now() - d;
+//     if (diff < 0) return "in future";
+//     const m = Math.round(diff / 60000);
+//     if (m < 1) return "just now";
+//     if (m < 60) return `${m}m ago`;
+//     const h = Math.round(m / 60);
+//     if (h < 24) return `${h}h ago`;
+//     const d2 = Math.round(h / 24);
+//     return `${d2}d ago`;
+//   } catch {
+//     return null;
+//   }
+// }
+// function fmt(iso) {
+//   try {
+//     return new Date(iso).toLocaleString();
+//   } catch {
+//     return "—";
+//   }
+// }
+
+// /* outline variants (static Tailwind classes) */
+// const ghostPurple =
+//   "inline-flex items-center gap-2 rounded-xl border border-purple-200 bg-white px-3 py-1.5 text-xs font-semibold text-purple-700 hover:bg-purple-50 focus:outline-none focus:ring-2 focus:ring-purple-200 disabled:opacity-50 disabled:cursor-not-allowed";
+// const ghostBlue =
+//   "inline-flex items-center gap-2 rounded-xl border border-blue-200 bg-white px-3 py-1.5 text-xs font-semibold text-blue-700 hover:bg-blue-50 focus:outline-none focus:ring-2 focus:ring-blue-200 disabled:opacity-50 disabled:cursor-not-allowed";
+// const ghostEmerald =
+//   "inline-flex items-center gap-2 rounded-xl border border-emerald-200 bg-white px-3 py-1.5 text-xs font-semibold text-emerald-700 hover:bg-emerald-50 focus:outline-none focus:ring-2 focus:ring-emerald-200 disabled:opacity-50 disabled:cursor-not-allowed";
+
+// /**
+//  * Props:
+//  *  - t: { id, name, body, kind, recipients, updatedAt, createdAt?, sentAt?, scheduledAt?, status? }
+//  *  - sending: boolean
+//  *  - onOpenInspector, onSend, onAssign, onViewRecipients
+//  */
+// export default function TemplateCard({
+//   t,
+//   sending = false,
+//   onOpenInspector,
+//   onSend,
+//   onAssign,
+//   onViewRecipients,
+// }) {
+//   const [expanded, setExpanded] = useState(false);
+
+//   const recipients = Number(t?.recipients || 0);
+//   const canSend = recipients > 0 && !sending;
+
+//   const isTextOnly = t?.kind !== "image_header";
+//   const typeLabel = isTextOnly ? "Text only" : "Image header";
+//   const body = String(t?.body || "");
+
+//   const createdAt =
+//     t?.createdAt || t?.created_on || t?.createdOn || t?.created || null;
+//   const sentAt =
+//     t?.sentAt || t?.lastSentAt || t?.dispatchedAt || t?.deliveredAt || null;
+//   const scheduledAt =
+//     t?.scheduledAt || t?.scheduleAt || t?.scheduled_for || null;
+
+//   const hasFutureSchedule =
+//     scheduledAt && new Date(scheduledAt).getTime() > Date.now();
+
+//   const { statusKind, statusLabel, statusTitle } = useMemo(() => {
+//     const raw = String(t?.status || "").toLowerCase();
+//     if (hasFutureSchedule)
+//       return {
+//         statusKind: "scheduled",
+//         statusLabel: "Scheduled",
+//         statusTitle: `Scheduled for ${fmt(scheduledAt)}`,
+//       };
+//     if (raw === "sending")
+//       return {
+//         statusKind: "sending",
+//         statusLabel: "Sending…",
+//         statusTitle: "",
+//       };
+//     if (raw === "sent" || sentAt)
+//       return {
+//         statusKind: "sent",
+//         statusLabel: sentAt ? `Sent ${relPast(sentAt)}` : "Sent",
+//         statusTitle: sentAt ? `Sent on ${fmt(sentAt)}` : "",
+//       };
+//     if (raw === "draft")
+//       return { statusKind: "draft", statusLabel: "Draft", statusTitle: "" };
+//     return { statusKind: "idle", statusLabel: "Not sent", statusTitle: "" };
+//   }, [t?.status, scheduledAt, hasFutureSchedule, sentAt]);
+
+//   const statusClasses =
+//     statusKind === "sent"
+//       ? "bg-emerald-50 text-emerald-700 ring-1 ring-emerald-100"
+//       : statusKind === "scheduled"
+//       ? "bg-amber-50 text-amber-800 ring-1 ring-amber-100"
+//       : statusKind === "sending"
+//       ? "bg-sky-50 text-sky-700 ring-1 ring-sky-100"
+//       : "bg-gray-100 text-gray-700 ring-1 ring-gray-200";
+
+//   return (
+//     <article className="group relative flex h-full flex-col overflow-hidden rounded-xl border border-gray-200 bg-white shadow-sm transition hover:shadow-md">
+//       {/* Header */}
+//       <div className="flex items-center justify-between gap-2 border-b border-gray-100 px-3 py-2">
+//         <div className="min-w-0 flex items-center gap-2">
+//           <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-gray-100 text-[12px] font-semibold text-gray-600">
+//             WA
+//           </div>
+//           <div className="min-w-0">
+//             <button
+//               onClick={onOpenInspector}
+//               type="button"
+//               className="block truncate text-[15px] font-semibold text-gray-900 hover:underline"
+//               title="Preview template"
+//             >
+//               {t?.name || "Untitled"}
+//             </button>
+//             <div className="mt-[2px] flex items-center gap-2 text-[11px] text-gray-500">
+//               <span
+//                 className={cx(
+//                   "inline-flex items-center gap-1 rounded-full px-1.5 py-[2px] ring-1",
+//                   "bg-gray-50 text-gray-700 ring-gray-200"
+//                 )}
+//                 title={typeLabel}
+//               >
+//                 <span className="inline-block h-[6px] w-[6px] rounded-full bg-gray-400" />{" "}
+//                 {typeLabel}
+//               </span>
+//               {createdAt && (
+//                 <span
+//                   className="inline-flex items-center gap-1"
+//                   title={`Created: ${fmt(createdAt)}`}
+//                 >
+//                   <svg
+//                     viewBox="0 0 24 24"
+//                     className="h-[12px] w-[12px]"
+//                     fill="none"
+//                     stroke="currentColor"
+//                     strokeWidth="2"
+//                   >
+//                     <path d="M8 2v3M16 2v3M3 9h18M4 7h16a1 1 0 011 1v11a2 2 0 01-2 2H5a2 2 0 01-2-2V8a1 1 0 011-1z" />
+//                   </svg>
+//                   {new Date(createdAt).toLocaleDateString()}
+//                 </span>
+//               )}
+//             </div>
+//           </div>
+//         </div>
+
+//         <div className="flex items-center gap-2">
+//           <span
+//             title="Recipients"
+//             className={cx(
+//               "inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[11px] font-semibold",
+//               recipients > 0
+//                 ? "bg-emerald-50 text-emerald-700"
+//                 : "bg-gray-100 text-gray-600"
+//             )}
+//           >
+//             <svg
+//               viewBox="0 0 24 24"
+//               className="h-3.5 w-3.5"
+//               fill="none"
+//               stroke="currentColor"
+//               strokeWidth="2"
+//             >
+//               <path d="M16 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2" />
+//               <circle cx="9" cy="7" r="4" />
+//             </svg>
+//             {recipients}
+//           </span>
+
+//           <span
+//             className={cx(
+//               "inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[11px] font-semibold",
+//               statusClasses
+//             )}
+//             title={statusTitle || undefined}
+//           >
+//             {statusKind === "scheduled" && (
+//               <svg
+//                 viewBox="0 0 24 24"
+//                 className="h-3.5 w-3.5"
+//                 fill="none"
+//                 stroke="currentColor"
+//                 strokeWidth="2"
+//               >
+//                 <path d="M12 6v6l4 2" />
+//                 <circle cx="12" cy="12" r="9" />
+//               </svg>
+//             )}
+//             {statusKind === "sent" && (
+//               <svg
+//                 viewBox="0 0 24 24"
+//                 className="h-3.5 w-3.5"
+//                 fill="none"
+//                 stroke="currentColor"
+//                 strokeWidth="2"
+//               >
+//                 <path d="M5 13l4 4L19 7" />
+//               </svg>
+//             )}
+//             {statusLabel}
+//           </span>
+//         </div>
+//       </div>
+
+//       {/* Body */}
+//       <div className="px-3 py-2">
+//         <div
+//           role="button"
+//           title={expanded ? "Click to collapse" : "Click to expand"}
+//           onClick={() => setExpanded(v => !v)}
+//           className={cx(
+//             "relative rounded-lg border bg-gray-50 px-3 py-2 text-[13px] leading-[1.45] text-gray-800",
+//             expanded
+//               ? "max-h-[320px] overflow-auto"
+//               : "max-h-20 overflow-hidden"
+//           )}
+//         >
+//           <pre className="whitespace-pre-wrap font-sans">{body}</pre>
+//           {!expanded && (
+//             <div className="pointer-events-none absolute inset-x-0 bottom-0 h-8 bg-gradient-to-t from-gray-50 to-transparent" />
+//           )}
+//         </div>
+
+//         <div className="mt-2 flex flex-wrap items-center gap-3 text-[12px] text-gray-600">
+//           <span
+//             className="inline-flex items-center gap-1"
+//             title={sentAt ? fmt(sentAt) : "Not sent yet"}
+//           >
+//             <svg
+//               viewBox="0 0 24 24"
+//               className="h-[14px] w-[14px]"
+//               fill="none"
+//               stroke="currentColor"
+//               strokeWidth="2"
+//             >
+//               <path d="M22 2L11 13" />
+//               <path d="M22 2l-7 20-4-9-9-4 20-7z" />
+//             </svg>
+//             {sentAt ? `Sent ${relPast(sentAt) || ""}` : "Not sent"}
+//           </span>
+
+//           {createdAt && (
+//             <span
+//               className="inline-flex items-center gap-1"
+//               title={fmt(createdAt)}
+//             >
+//               <svg
+//                 viewBox="0 0 24 24"
+//                 className="h-[14px] w-[14px]"
+//                 fill="none"
+//                 stroke="currentColor"
+//                 strokeWidth="2"
+//               >
+//                 <path d="M8 2v3M16 2v3M3 9h18M4 7h16a1 1 0 011 1v11a2 2 0 01-2 2H5a2 2 0 01-2-2V8a1 1 0 011-1z" />
+//               </svg>
+//               {new Date(createdAt).toLocaleDateString()}
+//             </span>
+//           )}
+
+//           {hasFutureSchedule && (
+//             <span
+//               className="inline-flex items-center gap-1"
+//               title={fmt(scheduledAt)}
+//             >
+//               <svg
+//                 viewBox="0 0 24 24"
+//                 className="h-[14px] w-[14px]"
+//                 fill="none"
+//                 stroke="currentColor"
+//                 strokeWidth="2"
+//               >
+//                 <path d="M12 6v6l4 2" />
+//                 <circle cx="12" cy="12" r="9" />
+//               </svg>
+//               Scheduled
+//             </span>
+//           )}
+
+//           <span
+//             onClick={() => setExpanded(v => !v)}
+//             className="ml-auto inline-flex cursor-pointer items-center gap-1 rounded-full bg-gray-100 px-2 py-[2px] text-[11px] text-gray-700 hover:bg-gray-200"
+//           >
+//             {expanded ? "Collapse" : "Expand"}
+//           </span>
+//         </div>
+//       </div>
+
+//       {/* Footer actions — SAME actions, distinct outline colors */}
+//       <div className="mt-auto border-t border-gray-100 px-3 py-2">
+//         <div className="flex items-center justify-end gap-2">
+//           <button
+//             className={ghostPurple}
+//             onClick={onAssign}
+//             type="button"
+//             title="Assign recipients"
+//           >
+//             <svg
+//               viewBox="0 0 24 24"
+//               className="h-4 w-4"
+//               fill="none"
+//               stroke="currentColor"
+//               strokeWidth="2"
+//             >
+//               <path d="M16 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2" />
+//               <circle cx="9" cy="7" r="4" />
+//               <path d="M19 8v6M22 11h-6" />
+//             </svg>
+//             Assign
+//           </button>
+
+//           <button
+//             className={ghostBlue}
+//             onClick={onViewRecipients}
+//             type="button"
+//             title="View recipients"
+//           >
+//             <svg
+//               viewBox="0 0 24 24"
+//               className="h-4 w-4"
+//               fill="none"
+//               stroke="currentColor"
+//               strokeWidth="2"
+//             >
+//               <path d="M16 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2" />
+//               <circle cx="9" cy="7" r="4" />
+//             </svg>
+//             Recipients
+//           </button>
+
+//           <button
+//             className={ghostEmerald}
+//             disabled={!canSend}
+//             onClick={onSend}
+//             type="button"
+//             title={canSend ? "Send campaign" : "Add recipients first"}
+//           >
+//             <svg
+//               viewBox="0 0 24 24"
+//               className="h-4 w-4"
+//               fill="none"
+//               stroke="currentColor"
+//               strokeWidth="2"
+//             >
+//               <path d="M22 2L11 13" />
+//               <path d="M22 2l-7 20-4-9-9-4 20-7z" />
+//             </svg>
+//             {sending ? "Sending…" : "Send"}
+//           </button>
+//         </div>
+//       </div>
+//     </article>
+//   );
+// }
+
+// import React, { useState, useMemo } from "react";
+
+// /* ---------- helpers ---------- */
+// function cx(...xs) {
+//   return xs.filter(Boolean).join(" ");
+// }
+// function relPast(iso) {
+//   if (!iso) return null;
+//   try {
+//     const d = new Date(iso).getTime();
+//     const diff = Date.now() - d;
+//     if (diff < 0) return "in future";
+//     const mins = Math.round(diff / 60000);
+//     if (mins < 1) return "just now";
+//     if (mins < 60) return `${mins}m ago`;
+//     const hrs = Math.round(mins / 60);
+//     if (hrs < 24) return `${hrs}h ago`;
+//     const days = Math.round(hrs / 24);
+//     return `${days}d ago`;
+//   } catch {
+//     return null;
+//   }
+// }
+// function fmt(iso) {
+//   try {
+//     return new Date(iso).toLocaleString();
+//   } catch {
+//     return "—";
+//   }
+// }
+
+// /**
+//  * Props:
+//  *  - t: { id, name, body, kind, recipients, updatedAt, createdAt?, sentAt?, scheduledAt?, status? }
+//  *  - sending: boolean
+//  *  - onOpenInspector, onSend, onAssign, onViewRecipients
+//  */
+// export default function TemplateCard({
+//   t,
+//   sending = false,
+//   onOpenInspector,
+//   onSend,
+//   onAssign,
+//   onViewRecipients,
+// }) {
+//   const [expanded, setExpanded] = useState(false);
+
+//   const recipients = Number(t?.recipients || 0);
+//   const canSend = recipients > 0 && !sending;
+
+//   const isTextOnly = t?.kind !== "image_header";
+//   const typeLabel = isTextOnly ? "Text only" : "Image header";
+
+//   // Message body comes from Campaign.MessageBody (normalized to t.body)
+//   const body = String(t?.body || "");
+
+//   // Dates (defensive across possible shapes)
+//   const createdAt =
+//     t?.createdAt || t?.created_on || t?.createdOn || t?.created || null;
+//   const sentAt =
+//     t?.sentAt || t?.lastSentAt || t?.dispatchedAt || t?.deliveredAt || null;
+//   const scheduledAt =
+//     t?.scheduledAt || t?.scheduleAt || t?.scheduled_for || null;
+
+//   // Status logic
+//   const hasFutureSchedule =
+//     scheduledAt && new Date(scheduledAt).getTime() > Date.now();
+
+//   const { statusKind, statusLabel, statusTitle } = useMemo(() => {
+//     // prefer explicit backend status if present
+//     const raw = String(t?.status || "").toLowerCase(); // "draft" | "sending" | "sent" | etc.
+
+//     if (hasFutureSchedule) {
+//       return {
+//         statusKind: "scheduled",
+//         statusLabel: "Scheduled",
+//         statusTitle: `Scheduled for ${fmt(scheduledAt)}`,
+//       };
+//     }
+
+//     if (raw === "sending") {
+//       return {
+//         statusKind: "sending",
+//         statusLabel: "Sending…",
+//         statusTitle: "",
+//       };
+//     }
+//     if (raw === "sent" || sentAt) {
+//       return {
+//         statusKind: "sent",
+//         statusLabel: sentAt ? `Sent ${relPast(sentAt)}` : "Sent",
+//         statusTitle: sentAt ? `Sent on ${fmt(sentAt)}` : "",
+//       };
+//     }
+//     if (raw === "draft") {
+//       return { statusKind: "draft", statusLabel: "Draft", statusTitle: "" };
+//     }
+
+//     return { statusKind: "idle", statusLabel: "Not sent", statusTitle: "" };
+//   }, [t?.status, scheduledAt, hasFutureSchedule, sentAt]);
+
+//   const statusClasses =
+//     statusKind === "sent"
+//       ? "bg-emerald-50 text-emerald-700 ring-1 ring-emerald-100"
+//       : statusKind === "scheduled"
+//       ? "bg-amber-50 text-amber-800 ring-1 ring-amber-100"
+//       : statusKind === "sending"
+//       ? "bg-sky-50 text-sky-700 ring-1 ring-sky-100"
+//       : statusKind === "draft"
+//       ? "bg-gray-100 text-gray-700 ring-1 ring-gray-200"
+//       : "bg-gray-100 text-gray-700 ring-1 ring-gray-200";
+
+//   return (
+//     <article className="group relative flex h-full flex-col overflow-hidden rounded-xl border border-gray-200 bg-white shadow-sm transition hover:shadow-md">
+//       {/* Header */}
+//       <div className="flex items-center justify-between gap-2 border-b border-gray-100 px-3 py-2">
+//         <div className="min-w-0 flex items-center gap-2">
+//           {/* App avatar / mark */}
+//           <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-gray-100 text-[12px] font-semibold text-gray-600">
+//             WA
+//           </div>
+
+//           <div className="min-w-0">
+//             <button
+//               onClick={onOpenInspector}
+//               type="button"
+//               className="block truncate text-[15px] font-semibold text-gray-900 hover:underline"
+//               title="Preview template"
+//             >
+//               {t?.name || "Untitled"}
+//             </button>
+//             <div className="mt-[2px] flex items-center gap-2 text-[11px] text-gray-500">
+//               <span
+//                 className={cx(
+//                   "inline-flex items-center gap-1 rounded-full px-1.5 py-[2px] ring-1",
+//                   "bg-gray-50 text-gray-700 ring-gray-200"
+//                 )}
+//                 title={typeLabel}
+//               >
+//                 <span className="inline-block h-[6px] w-[6px] rounded-full bg-gray-400" />
+//                 {typeLabel}
+//               </span>
+
+//               {/* Created date */}
+//               {createdAt && (
+//                 <span
+//                   className="inline-flex items-center gap-1"
+//                   title={`Created: ${fmt(createdAt)}`}
+//                 >
+//                   <svg
+//                     viewBox="0 0 24 24"
+//                     className="h-[12px] w-[12px]"
+//                     fill="none"
+//                     stroke="currentColor"
+//                     strokeWidth="2"
+//                   >
+//                     <path d="M8 2v3M16 2v3M3 9h18M4 7h16a1 1 0 011 1v11a2 2 0 01-2 2H5a2 2 0 01-2-2V8a1 1 0 011-1z" />
+//                   </svg>
+//                   {new Date(createdAt).toLocaleDateString()}
+//                 </span>
+//               )}
+//             </div>
+//           </div>
+//         </div>
+
+//         <div className="flex items-center gap-2">
+//           {/* recipients pill */}
+//           <span
+//             title="Recipients"
+//             className={cx(
+//               "inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[11px] font-semibold",
+//               recipients > 0
+//                 ? "bg-emerald-50 text-emerald-700"
+//                 : "bg-gray-100 text-gray-600"
+//             )}
+//           >
+//             <svg
+//               viewBox="0 0 24 24"
+//               className="h-3.5 w-3.5"
+//               fill="none"
+//               stroke="currentColor"
+//               strokeWidth="2"
+//             >
+//               <path d="M16 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2" />
+//               <circle cx="9" cy="7" r="4" />
+//             </svg>
+//             {recipients}
+//           </span>
+
+//           {/* status chip */}
+//           <span
+//             className={cx(
+//               "inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[11px] font-semibold",
+//               statusClasses
+//             )}
+//             title={statusTitle || undefined}
+//           >
+//             {statusKind === "scheduled" && (
+//               <svg
+//                 viewBox="0 0 24 24"
+//                 className="h-3.5 w-3.5"
+//                 fill="none"
+//                 stroke="currentColor"
+//                 strokeWidth="2"
+//               >
+//                 <path d="M12 6v6l4 2" />
+//                 <circle cx="12" cy="12" r="9" />
+//               </svg>
+//             )}
+//             {statusKind === "sent" && (
+//               <svg
+//                 viewBox="0 0 24 24"
+//                 className="h-3.5 w-3.5"
+//                 fill="none"
+//                 stroke="currentColor"
+//                 strokeWidth="2"
+//               >
+//                 <path d="M5 13l4 4L19 7" />
+//               </svg>
+//             )}
+//             {statusLabel}
+//           </span>
+
+//           {/* (preview eye icon removed as requested) */}
+//         </div>
+//       </div>
+
+//       {/* Body (collapsible) */}
+//       <div className="px-3 py-2">
+//         <div
+//           role="button"
+//           title={expanded ? "Click to collapse" : "Click to expand"}
+//           onClick={() => setExpanded(v => !v)}
+//           className={cx(
+//             "relative rounded-lg border bg-gray-50 px-3 py-2 text-[13px] leading-[1.45] text-gray-800",
+//             expanded
+//               ? "max-h-[320px] overflow-auto"
+//               : "max-h-20 overflow-hidden"
+//           )}
+//         >
+//           <pre className="whitespace-pre-wrap font-sans">{body}</pre>
+
+//           {!expanded && (
+//             <div className="pointer-events-none absolute inset-x-0 bottom-0 h-8 bg-gradient-to-t from-gray-50 to-transparent" />
+//           )}
+//         </div>
+
+//         {/* meta row under body */}
+//         <div className="mt-2 flex flex-wrap items-center gap-3 text-[12px] text-gray-600">
+//           {/* Sent/date or not sent */}
+//           <span
+//             className="inline-flex items-center gap-1"
+//             title={sentAt ? fmt(sentAt) : "Not sent yet"}
+//           >
+//             <svg
+//               viewBox="0 0 24 24"
+//               className="h-[14px] w-[14px]"
+//               fill="none"
+//               stroke="currentColor"
+//               strokeWidth="2"
+//             >
+//               <path d="M22 2L11 13" />
+//               <path d="M22 2l-7 20-4-9-9-4 20-7z" />
+//             </svg>
+//             {sentAt ? `Sent ${relPast(sentAt) || ""}` : "Not sent"}
+//           </span>
+
+//           {/* Created date (explicit) */}
+//           {createdAt && (
+//             <span
+//               className="inline-flex items-center gap-1"
+//               title={fmt(createdAt)}
+//             >
+//               <svg
+//                 viewBox="0 0 24 24"
+//                 className="h-[14px] w-[14px]"
+//                 fill="none"
+//                 stroke="currentColor"
+//                 strokeWidth="2"
+//               >
+//                 <path d="M8 2v3M16 2v3M3 9h18M4 7h16a1 1 0 011 1v11a2 2 0 01-2 2H5a2 2 0 01-2-2V8a1 1 0 011-1z" />
+//               </svg>
+//               {new Date(createdAt).toLocaleDateString()}
+//             </span>
+//           )}
+
+//           {/* Scheduled (if in future) */}
+//           {hasFutureSchedule && (
+//             <span
+//               className="inline-flex items-center gap-1"
+//               title={fmt(scheduledAt)}
+//             >
+//               <svg
+//                 viewBox="0 0 24 24"
+//                 className="h-[14px] w-[14px]"
+//                 fill="none"
+//                 stroke="currentColor"
+//                 strokeWidth="2"
+//               >
+//                 <path d="M12 6v6l4 2" />
+//                 <circle cx="12" cy="12" r="9" />
+//               </svg>
+//               Scheduled
+//             </span>
+//           )}
+
+//           {/* expand/collapse hint */}
+//           <span
+//             onClick={() => setExpanded(v => !v)}
+//             className="ml-auto inline-flex cursor-pointer items-center gap-1 rounded-full bg-gray-100 px-2 py-[2px] text-[11px] text-gray-700 hover:bg-gray-200"
+//           >
+//             {expanded ? "Collapse" : "Expand"}
+//           </span>
+//         </div>
+//       </div>
+
+//       {/* Footer actions (right aligned) */}
+//       <div className="mt-auto border-t border-gray-100 px-3 py-2">
+//         <div className="flex items-center justify-end gap-2">
+//           <button
+//             className="inline-flex items-center gap-2 rounded-lg bg-purple-600 px-3 py-1.5 text-xs font-semibold text-white hover:bg-purple-700"
+//             onClick={onAssign}
+//             type="button"
+//           >
+//             <svg
+//               viewBox="0 0 24 24"
+//               className="h-4 w-4"
+//               fill="none"
+//               stroke="currentColor"
+//               strokeWidth="2"
+//             >
+//               <path d="M16 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2" />
+//               <circle cx="9" cy="7" r="4" />
+//               <path d="M19 8v6M22 11h-6" />
+//             </svg>
+//             Assign
+//           </button>
+
+//           <button
+//             className="inline-flex items-center gap-2 rounded-lg bg-blue-100 px-3 py-1.5 text-xs font-semibold text-blue-700 hover:bg-blue-200"
+//             onClick={onViewRecipients}
+//             type="button"
+//           >
+//             <svg
+//               viewBox="0 0 24 24"
+//               className="h-4 w-4"
+//               fill="none"
+//               stroke="currentColor"
+//               strokeWidth="2"
+//             >
+//               <path d="M16 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2" />
+//               <circle cx="9" cy="7" r="4" />
+//             </svg>
+//             Recipients
+//           </button>
+
+//           <button
+//             className="inline-flex items-center gap-2 rounded-lg bg-emerald-600 px-3 py-1.5 text-xs font-semibold text-white hover:bg-emerald-700 disabled:opacity-50"
+//             disabled={!canSend}
+//             onClick={onSend}
+//             type="button"
+//             title={canSend ? "Send campaign" : "Add recipients first"}
+//           >
+//             <svg
+//               viewBox="0 0 24 24"
+//               className="h-4 w-4"
+//               fill="none"
+//               stroke="currentColor"
+//               strokeWidth="2"
+//             >
+//               <path d="M22 2L11 13" />
+//               <path d="M22 2l-7 20-4-9-9-4 20-7z" />
+//             </svg>
+//             {sending ? "Sending…" : "Send"}
+//           </button>
+//         </div>
+//       </div>
+//     </article>
+//   );
+// }
 
 // import React, { useState, useMemo } from "react";
 
